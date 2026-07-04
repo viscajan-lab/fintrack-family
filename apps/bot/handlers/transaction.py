@@ -19,7 +19,6 @@ class TransactionStates(StatesGroup):
 
 
 def format_idr(amount: int) -> str:
-    """Format integer ke Rp 1.250.000"""
     return f"Rp {amount:,.0f}".replace(",", ".")
 
 
@@ -31,26 +30,27 @@ def confirm_keyboard(tx_id: str) -> InlineKeyboardMarkup:
     ]])
 
 
+def delete_keyboard(tx_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🗑 Hapus Transaksi", callback_data=f"tx_delete:{tx_id}"),
+    ]])
+
+
 # ── Tangkap pesan teks yang bukan command ─────────────────────────────────────
 @router.message(F.text & ~F.text.startswith("/"))
 async def handle_text_input(message: Message, state: FSMContext) -> None:
     tg_id = message.from_user.id
-    text  = message.text.strip()
+    text  = message.text.strip()  # type: ignore[union-attr]
 
     # Jangan proses kalau ada FSM state aktif (misal: lagi setup keluarga)
-    current_state = await state.get_state()
-    if current_state is not None:
+    if await state.get_state() is not None:
         return
 
-    # Pastikan user sudah terdaftar
     member = await db.get_member_by_telegram_id(tg_id)
     if not member:
-        await message.answer(
-            "❗ Kamu belum terdaftar. Ketik /start untuk setup dulu ya!"
-        )
+        await message.answer("❗ Kamu belum terdaftar. Ketik /start untuk setup dulu ya!")
         return
 
-    # Parse input
     result = await parse_transaction(text)
     if not result:
         await message.answer(
@@ -63,14 +63,11 @@ async def handle_text_input(message: Message, state: FSMContext) -> None:
         )
         return
 
-    # Simpan draft ke FSM state untuk konfirmasi
-    await state.update_data(
-        draft={
-            **result,
-            "tenant_id":   member["tenant_id"],
-            "recorded_by": member["user_id"],
-        }
-    )
+    await state.update_data(draft={
+        **result,
+        "tenant_id":   member["tenant_id"],
+        "recorded_by": member.get("user_id"),
+    })
     await state.set_state(TransactionStates.confirming)
 
     icon = "📥" if result["type"] == "income" else "📤"
@@ -82,16 +79,15 @@ async def handle_text_input(message: Message, state: FSMContext) -> None:
         f"Kategori   : {result['category_name']}\n\n"
         f"Simpan transaksi ini?",
         parse_mode="Markdown",
-        reply_markup=confirm_keyboard("draft")
+        reply_markup=confirm_keyboard("draft"),
     )
 
 
-# ── Callback: tombol Simpan ───────────────────────────────────────────────────
+# ── Callback: Simpan ──────────────────────────────────────────────────────────
 @router.callback_query(F.data.startswith("tx_save:"))
 async def cb_save(callback: CallbackQuery, state: FSMContext) -> None:
     data  = await state.get_data()
     draft = data.get("draft")
-
     if not draft:
         await callback.answer("Session expired, coba input lagi.")
         await state.clear()
@@ -101,18 +97,39 @@ async def cb_save(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
 
     icon = "📥" if draft["type"] == "income" else "📤"
-    await callback.message.edit_text(
-        f"{icon} *Tersimpan!*\n\n"
-        f"*{format_idr(draft['amount'])}* — {draft['description']}\n"
-        f"Kategori: {draft['category_name']}",
-        parse_mode="Markdown"
-    )
+    if callback.message:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            f"{icon} *Tersimpan!*\n\n"
+            f"*{format_idr(draft['amount'])}* — {draft['description']}\n"
+            f"Kategori: {draft['category_name']}",
+            parse_mode="Markdown",
+            reply_markup=delete_keyboard(tx["id"]),
+        )
     await callback.answer("✅ Transaksi disimpan!")
 
 
-# ── Callback: tombol Batal ────────────────────────────────────────────────────
+# ── Callback: Batal ───────────────────────────────────────────────────────────
 @router.callback_query(F.data.startswith("tx_cancel:"))
 async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await callback.message.edit_text("❌ Transaksi dibatalkan.")
+    if callback.message:
+        await callback.message.edit_text("❌ Transaksi dibatalkan.")  # type: ignore[union-attr]
     await callback.answer()
+
+
+# ── Callback: Hapus transaksi yang sudah tersimpan ────────────────────────────
+@router.callback_query(F.data.startswith("tx_delete:"))
+async def cb_delete(callback: CallbackQuery) -> None:
+    tx_id  = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    member = await db.get_member_by_telegram_id(callback.from_user.id)
+    if not member:
+        await callback.answer("❌ Akses ditolak.", show_alert=True)
+        return
+
+    deleted = await db.delete_transaction(tx_id, member["tenant_id"])
+    if callback.message:
+        if deleted:
+            await callback.message.edit_text("🗑 *Transaksi dihapus.*", parse_mode="Markdown")  # type: ignore[union-attr]
+            await callback.answer("✅ Dihapus!")
+        else:
+            await callback.answer("❌ Gagal menghapus transaksi.", show_alert=True)

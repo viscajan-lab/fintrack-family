@@ -137,6 +137,21 @@ class SupabaseService:
             "transactions":  txs,
         }
 
+    async def delete_transaction(self, tx_id: str, tenant_id: str) -> bool:
+        """Hapus transaksi — hanya milik tenant ybs."""
+        sb = _get_client()
+        try:
+            res = await asyncio.to_thread(
+                lambda: sb.table("transactions")
+                .delete()
+                .eq("id", tx_id)
+                .eq("tenant_id", tenant_id)
+                .execute()
+            )
+            return bool(res.data)
+        except Exception:
+            return False
+
     # ── Budgets ───────────────────────────────────────────────────────────────
 
     async def get_budgets(self, tenant_id: str, month: int, year: int) -> list[dict]:

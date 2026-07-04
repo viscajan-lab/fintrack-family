@@ -14,6 +14,7 @@ from handlers.start import router as start_router
 from handlers.transaction import router as transaction_router
 from handlers.recap import router as recap_router
 from handlers.budget import router as budget_router
+from handlers.anggota import router as anggota_router
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -33,6 +34,18 @@ async def main() -> None:
     dp.include_router(transaction_router)
     dp.include_router(recap_router)
     dp.include_router(budget_router)
+    dp.include_router(anggota_router)
+
+    # Set bot commands (menu burger di Telegram)
+    from aiogram.types import BotCommand
+    await bot.set_my_commands([
+        BotCommand(command="start",        description="Mulai / kembali ke menu utama"),
+        BotCommand(command="rekap",        description="Rekap transaksi hari ini"),
+        BotCommand(command="rekap_bulan",  description="Rekap bulan ini"),
+        BotCommand(command="budget",       description="Cek sisa budget kategori"),
+        BotCommand(command="anggota",      description="Kelola anggota keluarga"),
+        BotCommand(command="help",         description="Panduan penggunaan bot"),
+    ])
 
     log.info("🤖 FinTrack Bot starting...")
     await bot.delete_webhook(drop_pending_updates=True)

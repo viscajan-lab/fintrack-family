@@ -3,7 +3,7 @@ Handler: /start — registrasi user & setup tenant (workspace keluarga)
 """
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -60,16 +60,45 @@ Cukup kirim pesan natural, contoh:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject) -> None:
     tg_id = message.from_user.id
     name  = message.from_user.first_name
+
+    # ── Deep-link invite: /start join_<tenant_id_with_underscores> ──
+    payload = command.args or ""
+    if payload.startswith("join_"):
+        tenant_id = payload[5:].replace("_", "-")
+        existing  = await db.get_member_by_telegram_id(tg_id)
+        if existing:
+            await message.answer(
+                f"ℹ️ Kamu sudah terdaftar di workspace keluarga ini.",
+                parse_mode="Markdown"
+            )
+            return
+        tenant = await db.get_tenant(tenant_id)
+        if not tenant:
+            await message.answer("❌ Link undangan tidak valid atau sudah kadaluarsa.")
+            return
+        await db.create_member(
+            tenant_id=tenant_id,
+            telegram_id=tg_id,
+            display_name=name,
+            role="member",
+        )
+        await message.answer(
+            f"✅ Berhasil bergabung ke workspace *{tenant['name']}*!\\n\\n"
+            f"Sekarang kamu bisa mulai catat transaksi.\\n"
+            f"Ketik /help untuk panduan.",
+            parse_mode="Markdown"
+        )
+        return
 
     member = await db.get_member_by_telegram_id(tg_id)
 
     if member:
-        tenant = await db.get_tenant(member["tenant_id"])
+        tenant = await db.get_tenant(member["tenant_id"]) or {}
         await message.answer(
-            WELCOME_BACK.format(name=name, family=tenant["name"]),
+            WELCOME_BACK.format(name=name, family=tenant.get("name", "keluargamu")),
             parse_mode="Markdown"
         )
     else:
