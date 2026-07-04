@@ -11,6 +11,7 @@ import {
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { logout } from "@/app/auth/actions"
 
 const NAV = [
   { href: "/dashboard",              label: "Beranda",    icon: LayoutDashboard },
@@ -57,10 +58,12 @@ export function Sidebar() {
 
       {/* User footer */}
       <div className="px-3 pb-4">
-        <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)] transition-colors">
-          <LogOut size={18} strokeWidth={1.8} />
-          Keluar
-        </button>
+        <form action={logout}>
+          <button type="submit" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)] transition-colors">
+            <LogOut size={18} strokeWidth={1.8} />
+            Keluar
+          </button>
+        </form>
       </div>
     </aside>
   )
