@@ -11,7 +11,7 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
-    console.error("[login] error:", error.message, error.status)
+    console.error("[login] error:", error.message)
     redirect(`/login?error=${encodeURIComponent(error.message)}`)
   }
   redirect("/dashboard")
@@ -22,49 +22,46 @@ export async function register(formData: FormData) {
   const password   = formData.get("password")    as string
   const familyName = formData.get("family_name") as string
 
-  console.log("[register] attempt:", email, "family:", familyName)
+  const admin = createAdminClient()
 
-  const supabase = await createClient()
-
-  // 1. Signup via anon client (sets session cookie)
-  const { data, error: signUpError } = await supabase.auth.signUp({
+  // 1. Buat user via admin — langsung confirmed, tidak butuh email verifikasi
+  const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email,
     password,
-    options: { data: { family_name: familyName } },
+    email_confirm: true,
+    user_metadata: { family_name: familyName },
   })
 
-  if (signUpError) {
-    console.error("[register] signUp error:", signUpError.message, signUpError.status, signUpError.code)
-    redirect(`/register?error=${encodeURIComponent(signUpError.message)}`)
+  if (createErr) {
+    console.error("[register] createUser error:", createErr.message)
+    redirect(`/register?error=${encodeURIComponent(createErr.message)}`)
   }
 
-  console.log("[register] signUp ok, user:", data.user?.id)
+  const userId = created.user.id
 
-  // 2. Buat tenant + tambah user sebagai admin — pakai admin client (bypass RLS)
-  if (data.user) {
-    const admin = createAdminClient()
+  // 2. Buat tenant + tambah user sebagai admin
+  const slug = `${familyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${Date.now().toString(36)}`
+  const { data: tenant, error: tenantErr } = await admin
+    .from("tenants")
+    .insert({ name: familyName, slug, plan: "free", storage_type: "supabase" })
+    .select("id")
+    .single()
 
-    const baseSlug = familyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
-    const slug     = `${baseSlug}-${Date.now().toString(36)}`
+  if (!tenantErr && tenant) {
+    await admin.from("tenant_members").insert({
+      tenant_id:    tenant.id,
+      user_id:      userId,
+      role:         "admin",
+      display_name: email.split("@")[0],
+    })
+  }
 
-    const { data: tenant, error: tenantErr } = await admin
-      .from("tenants")
-      .insert({ name: familyName, slug, plan: "free", storage_type: "supabase" })
-      .select("id")
-      .single()
-
-    console.log("[register] tenant insert:", tenant?.id, "err:", tenantErr?.message)
-
-    if (!tenantErr && tenant) {
-      const displayName = email.split("@")[0]
-      const { error: memberErr } = await admin.from("tenant_members").insert({
-        tenant_id:    tenant.id,
-        user_id:      data.user.id,
-        role:         "admin",
-        display_name: displayName,
-      })
-      console.log("[register] member insert err:", memberErr?.message)
-    }
+  // 3. Sign in via anon client untuk set session cookie
+  const supabase = await createClient()
+  const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+  if (signInErr) {
+    console.error("[register] signIn after create error:", signInErr.message)
+    redirect(`/login?error=${encodeURIComponent("Akun dibuat, silakan login")}`)
   }
 
   redirect("/dashboard")
