@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* ── FinTrack Design Tokens ─────────────────────────────────────── */
+@theme inline {
+  /* Font */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand — warm teal/emerald */
+  --color-brand-50:  #f0fdf9;
+  --color-brand-100: #ccfbef;
+  --color-brand-200: #99f6e0;
+  --color-brand-300: #5eead4;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+
+  /* Semantic */
+  --color-income:  #22c55e;   /* green-500  */
+  --color-expense: #f87171;   /* red-400    */
+  --color-savings: #60a5fa;   /* blue-400   */
+  --color-warning: #fbbf24;   /* amber-400  */
+
+  /* Surface (light) */
+  --color-background: #f8fafc;
+  --color-surface:    #ffffff;
+  --color-border:     #e2e8f0;
+  --color-muted:      #94a3b8;
+  --color-foreground: #0f172a;
+}
+
+/* Dark mode override */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #0f172a;
+    --color-surface:    #1e293b;
+    --color-border:     #334155;
+    --color-muted:      #64748b;
+    --color-foreground: #f1f5f9;
+  }
+}
+
+/* ── Base ───────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; }
+
+body {
+  min-height: 100%;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 99px;
+}
