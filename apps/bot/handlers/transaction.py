@@ -37,6 +37,11 @@ async def handle_text_input(message: Message, state: FSMContext) -> None:
     tg_id = message.from_user.id
     text  = message.text.strip()
 
+    # Jangan proses kalau ada FSM state aktif (misal: lagi setup keluarga)
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
+
     # Pastikan user sudah terdaftar
     member = await db.get_member_by_telegram_id(tg_id)
     if not member:

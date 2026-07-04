@@ -57,14 +57,17 @@ class SupabaseService:
 
     async def get_member_by_telegram_id(self, telegram_id: int) -> Optional[dict]:
         sb  = _get_client()
-        res = await asyncio.to_thread(
-            lambda: sb.table("tenant_members")
-            .select("*")
-            .eq("telegram_id", telegram_id)
-            .maybe_single()
-            .execute()
-        )
-        return res.data
+        try:
+            res = await asyncio.to_thread(
+                lambda: sb.table("tenant_members")
+                .select("*")
+                .eq("telegram_id", telegram_id)
+                .maybe_single()
+                .execute()
+            )
+            return res.data if res else None
+        except Exception:
+            return None
 
     async def create_member(
         self,
