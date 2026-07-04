@@ -32,13 +32,14 @@ CREATE TABLE tenants (
 CREATE TABLE tenant_members (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id     UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id       UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   role          TEXT NOT NULL DEFAULT 'member',     -- 'admin' | 'member'
   display_name  TEXT,                               -- nama panggilan di dalam keluarga
   telegram_id   BIGINT UNIQUE,                      -- link ke akun Telegram
-  joined_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (tenant_id, user_id)
+  joined_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Partial unique index: enforce uniqueness only when user_id is set (bot members have NULL user_id)
+CREATE UNIQUE INDEX idx_tenant_members_user ON tenant_members (tenant_id, user_id) WHERE user_id IS NOT NULL;
 
 -- ============================================================
 -- 3. CATEGORIES — kategori default + custom per tenant
@@ -73,7 +74,7 @@ INSERT INTO categories (tenant_id, name, emoji, type, sort_order) VALUES
 CREATE TABLE transactions (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id        UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  recorded_by      UUID NOT NULL REFERENCES auth.users(id),
+  recorded_by      UUID REFERENCES auth.users(id),        -- NULL for bot-created transactions
   type             TEXT NOT NULL CHECK (type IN ('income', 'expense')),
   amount           BIGINT NOT NULL CHECK (amount > 0),  -- dalam rupiah, integer (hindari float)
   description      TEXT NOT NULL,

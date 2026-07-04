@@ -58,21 +58,27 @@ class SupabaseService:
         telegram_id: int,
         display_name: str,
         role: str = "member",
+        user_id: Optional[str] = None,
     ) -> dict:
         sb  = await _get_client()
-        res = await sb.table("tenant_members").insert({
+        payload = {
             "tenant_id":    tenant_id,
             "telegram_id":  telegram_id,
             "display_name": display_name,
             "role":         role,
-        }).execute()
+        }
+        if user_id:
+            payload["user_id"] = user_id
+        res = await sb.table("tenant_members").insert(payload).execute()
         return res.data[0]
 
     # ── Transactions ──────────────────────────────────────────────────────────
 
     async def create_transaction(self, data: dict) -> dict:
         sb  = await _get_client()
-        res = await sb.table("transactions").insert(data).execute()
+        # Remove None values — recorded_by may be None for bot-created transactions
+        payload = {k: v for k, v in data.items() if v is not None}
+        res = await sb.table("transactions").insert(payload).execute()
         return res.data[0]
 
     async def get_summary(
