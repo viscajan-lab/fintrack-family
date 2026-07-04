@@ -1,0 +1,104 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient }   from "@/lib/supabase/server"
+
+async function getTenantId() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase
+    .from("tenant_members")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .single()
+  return data?.tenant_id ?? null
+}
+
+// ─── Add Transaction ──────────────────────────────────────────────────────────
+
+export async function addTransaction(formData: FormData) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const description  = formData.get("description") as string
+  const type         = formData.get("type") as "income" | "expense"
+  const amount       = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const date         = formData.get("date") as string
+  const category_id  = formData.get("category_id") as string | null
+  const notes        = formData.get("notes") as string | null
+
+  if (!description || !type || !amount || !date) {
+    return { error: "Deskripsi, tipe, jumlah, dan tanggal wajib diisi" }
+  }
+
+  const { error } = await supabase.from("transactions").insert({
+    tenant_id:   tenantId,
+    user_id:     user!.id,
+    description,
+    type,
+    amount,
+    date,
+    category_id: category_id || null,
+    notes:       notes || null,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard")
+  revalidatePath("/dashboard/transactions")
+  return { success: true }
+}
+
+// ─── Add Budget ───────────────────────────────────────────────────────────────
+
+export async function addBudget(formData: FormData) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const category_id = formData.get("category_id") as string
+  const amount      = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const month       = formData.get("month") as string   // YYYY-MM
+
+  if (!category_id || !amount || !month) {
+    return { error: "Kategori, jumlah, dan bulan wajib diisi" }
+  }
+
+  // Upsert: jika sudah ada budget bulan ini untuk kategori ini, update
+  const { error } = await supabase.from("budgets").upsert({
+    tenant_id:   tenantId,
+    category_id,
+    amount,
+    month,
+  }, { onConflict: "tenant_id,category_id,month" })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/budget")
+  return { success: true }
+}
+
+// ─── Delete Transaction ───────────────────────────────────────────────────────
+
+export async function deleteTransaction(id: string) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { error } = await supabase
+    .from("transactions")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard")
+  revalidatePath("/dashboard/transactions")
+  return { success: true }
+}
