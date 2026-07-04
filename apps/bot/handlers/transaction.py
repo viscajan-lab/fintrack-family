@@ -117,15 +117,20 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
-# ── Callback: Hapus transaksi yang sudah tersimpan ────────────────────────────
+# ── Callback: Hapus transaksi yang sudah tersimpan (admin only) ───────────────
 @router.callback_query(F.data.startswith("tx_delete:"))
 async def cb_delete(callback: CallbackQuery) -> None:
-    tx_id  = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
     member = await db.get_member_by_telegram_id(callback.from_user.id)
     if not member:
         await callback.answer("❌ Akses ditolak.", show_alert=True)
         return
 
+    # 🔒 role guard
+    if member.get("role") != "admin":
+        await callback.answer("❌ Hanya admin yang bisa menghapus transaksi.", show_alert=True)
+        return
+
+    tx_id   = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
     deleted = await db.delete_transaction(tx_id, member["tenant_id"])
     if callback.message:
         if deleted:
