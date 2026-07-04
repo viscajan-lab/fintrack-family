@@ -43,7 +43,8 @@ export async function register(formData: FormData) {
     })
   }
 
-  redirect("/dashboard")
+  // After register → onboarding to pick storage provider
+  redirect("/onboarding")
 }
 
 export async function logout() {

@@ -14,9 +14,16 @@ CREATE TABLE tenants (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name        TEXT NOT NULL,                        -- "Keluarga Ardi"
   slug        TEXT UNIQUE NOT NULL,                 -- "keluarga-ardi"
-  plan        TEXT NOT NULL DEFAULT 'free',         -- 'free' | 'family' | 'self_hosted'
+  plan         TEXT NOT NULL DEFAULT 'free',         -- 'free' | 'family' | 'self_hosted'
+  storage_type TEXT NOT NULL DEFAULT 'supabase',     -- 'supabase' | 'sheets'
+  -- Google Sheets credentials (NULL jika storage_type = 'supabase')
+  sheets_spreadsheet_id  TEXT,
+  sheets_access_token    TEXT,
+  sheets_refresh_token   TEXT,
+  sheets_token_expiry    TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT valid_storage_type CHECK (storage_type IN ('supabase', 'sheets'))
 );
 
 -- ============================================================
