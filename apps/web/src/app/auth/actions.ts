@@ -10,7 +10,10 @@ export async function login(formData: FormData) {
   const supabase = await createClient()
   const { error } = await supabase.auth.signInWithPassword({ email, password })
 
-  if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`)
+  if (error) {
+    console.error("[login] error:", error.message, error.status)
+    redirect(`/login?error=${encodeURIComponent(error.message)}`)
+  }
   redirect("/dashboard")
 }
 
@@ -18,6 +21,8 @@ export async function register(formData: FormData) {
   const email      = formData.get("email")       as string
   const password   = formData.get("password")    as string
   const familyName = formData.get("family_name") as string
+
+  console.log("[register] attempt:", email, "family:", familyName)
 
   const supabase = await createClient()
 
@@ -28,13 +33,17 @@ export async function register(formData: FormData) {
     options: { data: { family_name: familyName } },
   })
 
-  if (signUpError) redirect(`/register?error=${encodeURIComponent(signUpError.message)}`)
+  if (signUpError) {
+    console.error("[register] signUp error:", signUpError.message, signUpError.status, signUpError.code)
+    redirect(`/register?error=${encodeURIComponent(signUpError.message)}`)
+  }
+
+  console.log("[register] signUp ok, user:", data.user?.id)
 
   // 2. Buat tenant + tambah user sebagai admin — pakai admin client (bypass RLS)
   if (data.user) {
     const admin = createAdminClient()
 
-    // Generate slug unik
     const baseSlug = familyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
     const slug     = `${baseSlug}-${Date.now().toString(36)}`
 
@@ -44,14 +53,17 @@ export async function register(formData: FormData) {
       .select("id")
       .single()
 
+    console.log("[register] tenant insert:", tenant?.id, "err:", tenantErr?.message)
+
     if (!tenantErr && tenant) {
       const displayName = email.split("@")[0]
-      await admin.from("tenant_members").insert({
+      const { error: memberErr } = await admin.from("tenant_members").insert({
         tenant_id:    tenant.id,
         user_id:      data.user.id,
         role:         "admin",
         display_name: displayName,
       })
+      console.log("[register] member insert err:", memberErr?.message)
     }
   }
 
