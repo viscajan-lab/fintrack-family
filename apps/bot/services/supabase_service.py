@@ -441,3 +441,76 @@ class SupabaseService:
         """
         rows = await self.get_expense_by_category(tenant_id, month, year)
         return {r["category_name"]: int(r["total"]) for r in rows}
+
+    # ── Account linking (web ⇄ bot) ───────────────────────────────────────────
+
+    async def update_member_user_id(self, member_id: str, user_id: str) -> None:
+        """Isi user_id (auth.users) ke satu baris tenant_members by id."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenant_members")
+            .update({"user_id": user_id})
+            .eq("id", member_id)
+            .execute()
+        )
+
+    async def create_link_code(
+        self,
+        code: str,
+        direction: str,
+        expires_at: str,
+        user_id: Optional[str] = None,
+        telegram_id: Optional[int] = None,
+        tenant_id: Optional[str] = None,
+    ) -> dict:
+        """Buat baris account_link_codes. direction: 'web_to_bot'|'bot_to_web'."""
+        sb      = _get_client()
+        payload: dict = {"code": code, "direction": direction, "expires_at": expires_at}
+        if user_id:     payload["user_id"]     = user_id
+        if telegram_id: payload["telegram_id"] = telegram_id
+        if tenant_id:   payload["tenant_id"]   = tenant_id
+        res = await asyncio.to_thread(
+            lambda: sb.table("account_link_codes").insert(payload).execute()
+        )
+        return res.data[0]
+
+    async def get_active_link_code(self, code: str, direction: str) -> Optional[dict]:
+        """Ambil kode aktif (belum diklaim) sesuai arah. Cek expiry di caller."""
+        sb = _get_client()
+        try:
+            res = await asyncio.to_thread(
+                lambda: sb.table("account_link_codes")
+                .select("*")
+                .eq("code", code)
+                .eq("direction", direction)
+                .is_("claimed_at", "null")
+                .maybe_single()
+                .execute()
+            )
+            return res.data if res else None
+        except Exception:
+            return None
+
+    async def claim_link_code(self, link_id: str) -> None:
+        """Tandai kode terpakai (set claimed_at = now)."""
+        from datetime import datetime, timezone
+        sb  = _get_client()
+        now = datetime.now(timezone.utc).isoformat()
+        await asyncio.to_thread(
+            lambda: sb.table("account_link_codes")
+            .update({"claimed_at": now})
+            .eq("id", link_id)
+            .execute()
+        )
+
+    async def delete_unclaimed_codes(self, direction: str, telegram_id: int) -> None:
+        """Hapus kode lama (arah tsb) yang belum diklaim untuk telegram ini."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("account_link_codes")
+            .delete()
+            .eq("direction", direction)
+            .eq("telegram_id", telegram_id)
+            .is_("claimed_at", "null")
+            .execute()
+        )
