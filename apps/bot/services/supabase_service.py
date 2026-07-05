@@ -101,6 +101,54 @@ class SupabaseService:
         )
         return res.data or []
 
+    # ── Reminder harian (preferensi jam, disimpan WIB) ────────────────────────
+
+    async def set_reminder(self, telegram_id: int, hour: int, minute: int) -> None:
+        """Set jam reminder harian user (WIB). Reset penanda anti-dobel."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenant_members")
+            .update({
+                "reminder_hour":      hour,
+                "reminder_minute":    minute,
+                "reminder_last_sent": None,
+            })
+            .eq("telegram_id", telegram_id)
+            .execute()
+        )
+
+    async def clear_reminder(self, telegram_id: int) -> None:
+        """Matikan reminder harian user (set jam ke NULL)."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenant_members")
+            .update({"reminder_hour": None, "reminder_last_sent": None})
+            .eq("telegram_id", telegram_id)
+            .execute()
+        )
+
+    async def get_members_reminder_at(self, hour: int, minute: int) -> list[dict]:
+        """Member yang jam remindernya == hour:minute (WIB). Dipakai scheduler."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("tenant_members")
+            .select("telegram_id, reminder_last_sent")
+            .eq("reminder_hour", hour)
+            .eq("reminder_minute", minute)
+            .execute()
+        )
+        return res.data or []
+
+    async def mark_reminder_sent(self, telegram_id: int, today: date) -> None:
+        """Tandai reminder harian sudah dikirim hari ini (anti-dobel)."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenant_members")
+            .update({"reminder_last_sent": str(today)})
+            .eq("telegram_id", telegram_id)
+            .execute()
+        )
+
     # ── Transactions ──────────────────────────────────────────────────────────
 
     async def create_transaction(self, data: dict) -> dict:

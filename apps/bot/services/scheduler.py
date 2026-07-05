@@ -1,27 +1,38 @@
 """
-Scheduler — background task harian untuk aturan transaksi berulang (recurring_rules).
+Scheduler — background task WIB-aware. Satu loop, dua tugas harian:
+
+  1. Recurring rules (tagihan/langganan berulang)
+       - Jatuh tempo tiap `RECURRING_HOUR` WIB pada day_of_month rule.
+       - Mode 'auto'     : langsung catat transaksi + notif pembuat.
+       - Mode 'reminder' : kirim pesan + tombol [Catat sekarang / Nanti].
+       - Anti-dobel      : mark_recurring_run(last_run_date) + filter query.
+       - Bulan pendek    : rule tgl 29/30/31 → jalan di hari terakhir bulan.
+
+  2. Reminder harian catat pengeluaran (per user, jam fleksibel)
+       - User set jam via /reminder HH:MM (disimpan WIB di tenant_members).
+       - Tiap menit dicek: user yang jam remindernya == sekarang → dikirim.
 
 Desain (KISS, zero-dependency):
-  - Loop asyncio: tidur sampai RUN_HOUR tiap hari, lalu proses rule jatuh tempo.
-  - Mode 'auto'     : langsung catat transaksi + notif ke pembuat.
-  - Mode 'reminder' : kirim pesan + tombol [Catat sekarang / Nanti].
-  - Anti-dobel      : mark_recurring_run(last_run_date) + filter di get_due_recurring.
-  - Bulan pendek    : rule tgl 29/30/31 yang tidak ada di bulan ini → jalan di hari
-                      terakhir bulan (mis. tgl 31 pada Februari → 28/29 Feb).
+  - Loop tick tiap 60 detik memakai jam WIB (Asia/Jakarta), BUKAN jam server.
+    Railway berjalan di UTC; memakai jam server membuat semua jadwal meleset
+    7 jam. Sumber waktu tunggal: services.waktu.now_wib().
+  - Tick per menit → mendukung banyak jam reminder berbeda tanpa banyak task.
+  - Anti-dobel harian pakai penanda tanggal WIB (today_wib()).
 """
 import asyncio
 import logging
 from calendar import monthrange
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from services.supabase_service import SupabaseService
+from services.waktu import now_wib, today_wib
 
 log = logging.getLogger(__name__)
 
-RUN_HOUR = 8   # jam lokal server (UTC di Railway) untuk proses harian
+RECURRING_HOUR = 8   # jam WIB untuk memproses recurring rules harian
 
 
 def format_idr(amount: int) -> str:
@@ -39,7 +50,7 @@ def _due_days(today: date) -> list[int]:
     return [today.day]
 
 
-async def _reminder_kb(rule_id: str) -> InlineKeyboardMarkup:
+def _reminder_kb(rule_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Catat sekarang", callback_data=f"recdue:{rule_id}"),
         InlineKeyboardButton(text="⏭ Nanti",          callback_data=f"recskip:{rule_id}"),
@@ -58,8 +69,10 @@ async def run_rule(db: SupabaseService, rule: dict, today: date) -> None:
     })
 
 
-async def _process_due(bot: Bot, db: SupabaseService, today: date) -> int:
-    """Proses semua rule jatuh tempo hari ini. Return jumlah rule tersentuh."""
+# ── Tugas 1: recurring rules ─────────────────────────────────────────────────
+
+async def _process_recurring(bot: Bot, db: SupabaseService, today: date) -> int:
+    """Proses semua rule jatuh tempo hari ini (WIB). Return jumlah tersentuh."""
     seen: set[str] = set()
     touched = 0
     for day in _due_days(today):
@@ -76,51 +89,88 @@ async def _process_due(bot: Bot, db: SupabaseService, today: date) -> int:
                     if chat_id:
                         await bot.send_message(
                             chat_id,
-                            f"🤖 *Tagihan otomatis dicatat*\n\n"
-                            f"*{rule['description']}*\n"
+                            f"🤖 <b>Tagihan otomatis dicatat</b>\n\n"
+                            f"<b>{rule['description']}</b>\n"
                             f"{format_idr(rule['amount'])} • {rule['category_name']}\n\n"
                             f"Cek: /rekap_bulan",
-                            parse_mode="Markdown",
+                            parse_mode="HTML",
                         )
-                else:  # reminder — jangan mark_run dulu, tunggu konfirmasi user
+                else:  # reminder — kirim, lalu tandai (anti spam harian)
                     if chat_id:
                         await bot.send_message(
                             chat_id,
-                            f"🔔 *Pengingat tagihan*\n\n"
-                            f"*{rule['description']}*\n"
+                            f"🔔 <b>Pengingat tagihan</b>\n\n"
+                            f"<b>{rule['description']}</b>\n"
                             f"{format_idr(rule['amount'])} • {rule['category_name']}\n"
                             f"Jatuh tempo hari ini. Catat sekarang?",
-                            parse_mode="Markdown",
-                            reply_markup=await _reminder_kb(rule["id"]),
+                            parse_mode="HTML",
+                            reply_markup=_reminder_kb(rule["id"]),
                         )
-                    # Tandai sudah dikirim remindernya (anti spam harian)
                     await db.mark_recurring_run(rule["id"], today)
             except Exception as e:
                 log.error("Gagal proses rule %s: %s", rule.get("id"), e)
     return touched
 
 
-async def _seconds_until_next_run(now: datetime) -> float:
-    target = now.replace(hour=RUN_HOUR, minute=0, second=0, microsecond=0)
-    if now >= target:
-        target += timedelta(days=1)
-    return (target - now).total_seconds()
+# ── Tugas 2: reminder harian catat pengeluaran ───────────────────────────────
+
+async def _process_reminders(bot: Bot, db: SupabaseService, hh: int, mm: int, today: date) -> int:
+    """Kirim reminder harian ke user yang jam remindernya == hh:mm WIB.
+    Anti-dobel: skip user yang reminder_last_sent == hari ini (WIB)."""
+    sent = 0
+    for m in await db.get_members_reminder_at(hh, mm):
+        if m.get("reminder_last_sent") == str(today):
+            continue
+        chat_id = m.get("telegram_id")
+        if not chat_id:
+            continue
+        try:
+            await bot.send_message(
+                chat_id,
+                "🔔 <b>Jangan lupa catat pengeluaran hari ini!</b>\n\n"
+                "Tulis langsung aja, misal:\n"
+                "<code>kopi 25rb</code> atau <code>gaji 5jt</code>\n\n"
+                "Lihat rekap: /rekap • Setel ulang jam: /reminder",
+                parse_mode="HTML",
+            )
+            await db.mark_reminder_sent(chat_id, today)
+            sent += 1
+        except Exception as e:
+            log.error("Gagal kirim reminder ke %s: %s", chat_id, e)
+    return sent
 
 
-async def recurring_scheduler(bot: Bot, db: SupabaseService) -> None:
-    """Task latar: bangun tiap hari jam RUN_HOUR, proses rule jatuh tempo."""
-    log.info("⏰ Recurring scheduler aktif (jam %02d:00 harian).", RUN_HOUR)
+# ── Loop utama: tick per menit, WIB-aware ────────────────────────────────────
+
+async def scheduler_loop(bot: Bot, db: SupabaseService) -> None:
+    """Task latar: tick tiap menit pada jam WIB, jalankan tugas jatuh tempo."""
+    log.info("⏰ Scheduler WIB aktif (recurring %02d:00, reminder per-user).", RECURRING_HOUR)
+    last_recurring_date: str | None = None
     while True:
         try:
-            delay = await _seconds_until_next_run(datetime.now())
-            log.info("Scheduler tidur %.0f detik sampai run berikutnya.", delay)
-            await asyncio.sleep(delay)
-            today = date.today()
-            n = await _process_due(bot, db, today)
-            log.info("Scheduler run %s: %d rule diproses.", today, n)
+            now = now_wib()
+            today = now.date()
+
+            # Reminder harian: cek tiap menit (jam fleksibel per user)
+            n = await _process_reminders(bot, db, now.hour, now.minute, today)
+            if n:
+                log.info("Reminder terkirim: %d user (%02d:%02d WIB).", n, now.hour, now.minute)
+
+            # Recurring: sekali sehari saat menit 0 jam RECURRING_HOUR WIB
+            if now.hour == RECURRING_HOUR and now.minute == 0 and last_recurring_date != str(today):
+                touched = await _process_recurring(bot, db, today)
+                last_recurring_date = str(today)
+                log.info("Recurring run %s WIB: %d rule diproses.", today, touched)
+
+            # Tidur sampai awal menit berikutnya (drift-free)
+            await asyncio.sleep(max(1, 60 - now.second))
         except asyncio.CancelledError:
             log.info("Scheduler dihentikan.")
             raise
         except Exception as e:
-            log.error("Scheduler error, retry 1 jam: %s", e)
-            await asyncio.sleep(3600)
+            log.error("Scheduler error, retry 60 dtk: %s", e)
+            await asyncio.sleep(60)
+
+
+# Alias kompatibilitas mundur (main.py lama memanggil recurring_scheduler)
+recurring_scheduler = scheduler_loop
