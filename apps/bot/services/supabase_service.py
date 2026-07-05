@@ -354,3 +354,42 @@ class SupabaseService:
             .execute()
         )
         return res.data if res else None
+
+    # ── Insight / Analytics (read-only, tanpa migrasi DB) ─────────────────────
+
+    async def get_month_totals(self, tenant_id: str, month: int, year: int) -> dict:
+        """
+        Total pemasukan & pengeluaran untuk SATU bulan kalender penuh.
+        Read-only, memakai tabel transactions langsung (tanpa view baru).
+
+        Return: {"income": int, "expense": int, "count": int}
+        """
+        from calendar import monthrange
+        last_day    = monthrange(year, month)[1]
+        month_start = date(year, month, 1)
+        month_end   = date(year, month, last_day)
+
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("transactions")
+            .select("amount, type")
+            .eq("tenant_id", tenant_id)
+            .gte("transaction_date", str(month_start))
+            .lte("transaction_date", str(month_end))
+            .execute()
+        )
+        txs     = res.data or []
+        income  = sum(int(t["amount"]) for t in txs if t["type"] == "income")
+        expense = sum(int(t["amount"]) for t in txs if t["type"] == "expense")
+        return {"income": income, "expense": expense, "count": len(txs)}
+
+    async def get_expense_by_category_range(
+        self, tenant_id: str, month: int, year: int,
+    ) -> dict[str, int]:
+        """
+        Pengeluaran per kategori untuk satu bulan, sebagai dict {kategori: total}.
+        Membungkus view v_expense_by_category yang sudah ada, di-map ke dict
+        supaya gampang dibandingkan antar bulan di layer insight.
+        """
+        rows = await self.get_expense_by_category(tenant_id, month, year)
+        return {r["category_name"]: int(r["total"]) for r in rows}

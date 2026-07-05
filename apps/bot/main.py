@@ -15,6 +15,7 @@ from handlers.transaction import router as transaction_router
 from handlers.recap import router as recap_router
 from handlers.budget import router as budget_router
 from handlers.recurring import router as recurring_router
+from handlers.insight import router as insight_router
 from handlers.anggota import router as anggota_router
 
 from services.supabase_service import SupabaseService
@@ -42,6 +43,7 @@ async def main() -> None:
     dp.include_router(transaction_router)
     dp.include_router(recap_router)
     dp.include_router(budget_router)
+    dp.include_router(insight_router)
     dp.include_router(anggota_router)
 
     # Set bot commands (menu burger di Telegram)
@@ -52,6 +54,7 @@ async def main() -> None:
         BotCommand(command="rekap_bulan",  description="Rekap bulan ini"),
         BotCommand(command="budget",       description="Cek sisa budget kategori"),
         BotCommand(command="set_budget",   description="Set / ubah budget kategori"),
+        BotCommand(command="insight",      description="Analitik: bulan ini vs bulan lalu"),
         BotCommand(command="recurring",    description="Daftar tagihan & langganan berulang"),
         BotCommand(command="add_recurring", description="Tambah tagihan berulang"),
         BotCommand(command="anggota",      description="Kelola anggota keluarga"),
