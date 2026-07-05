@@ -278,3 +278,79 @@ class SupabaseService:
             "remaining": limit - spent,
             "ratio":     spent / limit,
         }
+
+    # ── Recurring rules (tagihan/langganan berulang) ──────────────────────────
+
+    async def create_recurring(self, data: dict) -> dict:
+        """Buat aturan berulang. data: tenant_id, created_by, type, amount,
+        category_name, description, day_of_month, mode."""
+        sb      = _get_client()
+        payload = {k: v for k, v in data.items() if v is not None}
+        res     = await asyncio.to_thread(
+            lambda: sb.table("recurring_rules").insert(payload).execute()
+        )
+        return res.data[0]
+
+    async def list_recurring(self, tenant_id: str) -> list[dict]:
+        """Semua aturan berulang tenant (aktif & non-aktif), urut tanggal."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("recurring_rules")
+            .select("*")
+            .eq("tenant_id", tenant_id)
+            .order("day_of_month")
+            .execute()
+        )
+        return res.data or []
+
+    async def delete_recurring(self, rule_id: str, tenant_id: str) -> bool:
+        """Hapus aturan — hanya milik tenant ybs."""
+        sb = _get_client()
+        try:
+            res = await asyncio.to_thread(
+                lambda: sb.table("recurring_rules")
+                .delete()
+                .eq("id", rule_id)
+                .eq("tenant_id", tenant_id)
+                .execute()
+            )
+            return bool(res.data)
+        except Exception:
+            return False
+
+    async def get_due_recurring(self, day: int, today: date) -> list[dict]:
+        """Aturan aktif yang jatuh tempo pada `day` dan belum jalan hari ini.
+        Dipakai scheduler harian. `today` untuk filter anti-dobel (last_run_date)."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("recurring_rules")
+            .select("*")
+            .eq("active", True)
+            .eq("day_of_month", day)
+            .execute()
+        )
+        rules = res.data or []
+        # Anti-dobel: skip yang last_run_date == hari ini
+        return [r for r in rules if r.get("last_run_date") != str(today)]
+
+    async def mark_recurring_run(self, rule_id: str, today: date) -> None:
+        """Tandai aturan sudah dieksekusi hari ini (set last_run_date)."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("recurring_rules")
+            .update({"last_run_date": str(today)})
+            .eq("id", rule_id)
+            .execute()
+        )
+
+    async def get_recurring(self, rule_id: str) -> Optional[dict]:
+        """Ambil satu aturan berulang by id (dipakai callback reminder)."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("recurring_rules")
+            .select("*")
+            .eq("id", rule_id)
+            .maybe_single()
+            .execute()
+        )
+        return res.data if res else None
