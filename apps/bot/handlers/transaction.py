@@ -22,6 +22,51 @@ def format_idr(amount: int) -> str:
     return f"Rp {amount:,.0f}".replace(",", ".")
 
 
+def build_budget_warning(status: dict, just_added: int) -> str | None:
+    """
+    Bangun pesan peringatan budget berdasarkan status kategori.
+
+    `status` = hasil db.get_budget_status_for_category (sudah termasuk transaksi baru
+               kalau view realtime; kalau tidak, kita amankan dgn just_added di caller).
+    `just_added` = nominal pengeluaran yang baru saja dicatat (untuk konteks pesan).
+
+    Return None kalau masih < 70% (aman, tak perlu ganggu).
+    Ambang: 🟡 70% · 🔴 90% · 🚨 >100%.
+    """
+    limit     = status["limit"]
+    spent     = status["spent"]
+    remaining = status["remaining"]
+    ratio     = status["ratio"]
+    cat       = status["category_name"]
+    pct       = round(ratio * 100)
+
+    if ratio > 1.0:
+        over = spent - limit
+        return (
+            f"🚨 *BUDGET JEBOL!*\n\n"
+            f"Kategori *{cat}* sudah lewat budget bulan ini.\n"
+            f"Terpakai: *{format_idr(spent)}* / {format_idr(limit)}\n"
+            f"Kelebihan: *{format_idr(over)}* ({pct}%)\n\n"
+            f"_Mungkin perlu rem pengeluaran di kategori ini ya._"
+        )
+    if ratio >= 0.90:
+        return (
+            f"🔴 *Budget Hampir Habis!*\n\n"
+            f"Kategori *{cat}* sudah *{pct}%* terpakai.\n"
+            f"Terpakai: {format_idr(spent)} / {format_idr(limit)}\n"
+            f"Sisa: *{format_idr(remaining)}* aja nih.\n\n"
+            f"_Hati-hati, tinggal dikit lagi._"
+        )
+    if ratio >= 0.70:
+        return (
+            f"🟡 *Perhatian Budget*\n\n"
+            f"Kategori *{cat}* sudah *{pct}%* terpakai.\n"
+            f"Terpakai: {format_idr(spent)} / {format_idr(limit)}\n"
+            f"Sisa: *{format_idr(remaining)}*."
+        )
+    return None
+
+
 def confirm_keyboard(tx_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Simpan",  callback_data=f"tx_save:{tx_id}"),
@@ -106,6 +151,34 @@ async def cb_save(callback: CallbackQuery, state: FSMContext) -> None:
             reply_markup=delete_keyboard(tx["id"]),
         )
     await callback.answer("✅ Transaksi disimpan!")
+
+    # ── Auto-warning budget (hanya untuk pengeluaran) ────────────────────────
+    # Best-effort: kalau gagal, transaksi tetap tersimpan (tidak boleh bikin crash).
+    if draft["type"] == "expense":
+        try:
+            from datetime import date as _date
+            today = _date.today()
+            status = await db.get_budget_status_for_category(
+                tenant_id=draft["tenant_id"],
+                category_name=draft["category_name"],
+                month=today.month,
+                year=today.year,
+            )
+            if status:
+                # Amankan bila view telat refresh: pastikan transaksi baru ikut terhitung.
+                # Kalau `spent` ternyata belum memasukkan nominal ini, tambahkan manual.
+                just_added = int(draft["amount"])
+                if status["spent"] < just_added:
+                    status["spent"]     += just_added
+                    status["remaining"]  = status["limit"] - status["spent"]
+                    status["ratio"]      = status["spent"] / status["limit"]
+
+                warning = build_budget_warning(status, just_added)
+                if warning and callback.message:
+                    await callback.message.answer(warning, parse_mode="Markdown")  # type: ignore[union-attr]
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning("Budget check gagal (diabaikan): %s", e)
 
 
 # ── Callback: Batal ───────────────────────────────────────────────────────────

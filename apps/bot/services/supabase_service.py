@@ -183,3 +183,66 @@ class SupabaseService:
             .execute()
         )
         return res.data or []
+
+    async def get_budget_status_for_category(
+        self,
+        tenant_id: str,
+        category_name: str,
+        month: int,
+        year: int,
+    ) -> Optional[dict]:
+        """
+        Ambil status budget untuk SATU kategori pada bulan berjalan.
+
+        Return None jika kategori tsb tidak punya budget bulan ini
+        (artinya: tidak perlu warning apa pun).
+
+        Jika ada budget, kembalikan:
+          {
+            "category_name": str,
+            "limit":     int,   # nominal budget
+            "spent":     int,   # total pengeluaran kategori bulan ini
+            "remaining": int,   # limit - spent (bisa negatif kalau jebol)
+            "ratio":     float, # spent / limit
+          }
+        """
+        sb = _get_client()
+
+        # 1. Ambil budget kategori ini (kalau ada)
+        budget_res = await asyncio.to_thread(
+            lambda: sb.table("budgets")
+            .select("amount, category_name")
+            .eq("tenant_id", tenant_id)
+            .eq("category_name", category_name)
+            .eq("month", month)
+            .eq("year", year)
+            .maybe_single()
+            .execute()
+        )
+        budget = budget_res.data if budget_res else None
+        if not budget:
+            return None
+
+        limit = int(budget["amount"])
+        if limit <= 0:
+            return None
+
+        # 2. Ambil total pengeluaran kategori ini bulan ini dari view
+        exp_res = await asyncio.to_thread(
+            lambda: sb.table("v_expense_by_category")
+            .select("total")
+            .eq("tenant_id", tenant_id)
+            .eq("category_name", category_name)
+            .eq("month", f"{year}-{month:02d}-01")
+            .maybe_single()
+            .execute()
+        )
+        spent = int(exp_res.data["total"]) if (exp_res and exp_res.data) else 0
+
+        return {
+            "category_name": category_name,
+            "limit":     limit,
+            "spent":     spent,
+            "remaining": limit - spent,
+            "ratio":     spent / limit,
+        }
