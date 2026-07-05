@@ -167,6 +167,38 @@ class SupabaseService:
         )
         return res.data or []
 
+    async def upsert_budget(
+        self,
+        tenant_id: str,
+        category_name: str,
+        amount: int,
+        month: int,
+        year: int,
+    ) -> dict:
+        """
+        Set / perbarui budget satu kategori pada bulan tertentu.
+
+        Memanfaatkan UNIQUE (tenant_id, category_name, month, year):
+        kalau budget kategori itu sudah ada di bulan ybs -> di-UPDATE,
+        kalau belum ada -> di-INSERT. Idempoten, tidak bikin duplikat.
+
+        Return baris budget hasil upsert.
+        """
+        sb  = _get_client()
+        row = {
+            "tenant_id":     tenant_id,
+            "category_name": category_name,
+            "amount":        int(amount),
+            "month":         month,
+            "year":          year,
+        }
+        res = await asyncio.to_thread(
+            lambda: sb.table("budgets")
+            .upsert(row, on_conflict="tenant_id,category_name,month,year")
+            .execute()
+        )
+        return (res.data or [row])[0]
+
     async def get_expense_by_category(
         self,
         tenant_id: str,

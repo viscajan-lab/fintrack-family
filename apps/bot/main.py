@@ -43,6 +43,7 @@ async def main() -> None:
         BotCommand(command="rekap",        description="Rekap transaksi hari ini"),
         BotCommand(command="rekap_bulan",  description="Rekap bulan ini"),
         BotCommand(command="budget",       description="Cek sisa budget kategori"),
+        BotCommand(command="set_budget",   description="Set / ubah budget kategori"),
         BotCommand(command="anggota",      description="Kelola anggota keluarga"),
         BotCommand(command="help",         description="Panduan penggunaan bot"),
     ])
