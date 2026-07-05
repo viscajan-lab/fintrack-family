@@ -62,7 +62,7 @@ def _delta_line(label: str, now: int, prev: int, *, good_when_up: bool) -> str:
         up_is_good = (diff > 0) == good_when_up
         mood = " 🟢" if up_is_good else " 🔴"
 
-    return f"{label}: *{format_idr(now)}*  {pct_txt}{mood}"
+    return f"{label}: <b>{format_idr(now)}</b>  {pct_txt}{mood}"
 
 
 def _top_movers(now_cat: dict[str, int], prev_cat: dict[str, int], limit: int = 3):
@@ -97,10 +97,10 @@ def _build_insights(
     # 1. Pengeluaran melonjak?
     if prev_exp > 0 and now_exp > prev_exp * 1.15:
         pct = round((now_exp - prev_exp) / prev_exp * 100)
-        tips.append(f"⚠️ Pengeluaran naik *{pct}%* dari bulan lalu — coba cek kategori yang melonjak di bawah.")
+        tips.append(f"⚠️ Pengeluaran naik <b>{pct}%</b> dari bulan lalu — coba cek kategori yang melonjak di bawah.")
     elif prev_exp > 0 and now_exp < prev_exp * 0.85:
         pct = round((prev_exp - now_exp) / prev_exp * 100)
-        tips.append(f"👏 Pengeluaran turun *{pct}%* dari bulan lalu. Hemat, mantap!")
+        tips.append(f"👏 Pengeluaran turun <b>{pct}%</b> dari bulan lalu. Hemat, mantap!")
 
     # 2. Kategori paling boros bulan ini
     if now_cat:
@@ -109,9 +109,9 @@ def _build_insights(
         v       = now_cat[top_cat]
         if prev_v > 0 and v > prev_v * 1.3:
             pct = round((v - prev_v) / prev_v * 100)
-            tips.append(f"🔍 *{top_cat}* jadi pos terbesar & naik *{pct}%* — pantau ekstra ya.")
+            tips.append(f"🔍 <b>{top_cat}</b> jadi pos terbesar & naik <b>{pct}%</b> — pantau ekstra ya.")
         else:
-            tips.append(f"🔍 Pos terbesar bulan ini: *{top_cat}* ({format_idr(v)}).")
+            tips.append(f"🔍 Pos terbesar bulan ini: <b>{top_cat}</b> ({format_idr(v)}).")
 
     # 3. Proyeksi & tabungan
     if day_now > 0 and now_exp > 0:
@@ -119,14 +119,14 @@ def _build_insights(
         projected = round(daily_avg * days_in_month)
         if projected > now_exp:
             tips.append(
-                f"📈 Rata-rata *{format_idr(round(daily_avg))}*/hari → "
-                f"proyeksi akhir bulan ~*{format_idr(projected)}*."
+                f"📈 Rata-rata <b>{format_idr(round(daily_avg))}</b>/hari → "
+                f"proyeksi akhir bulan ~<b>{format_idr(projected)}</b>."
             )
 
     if now_net > 0:
-        tips.append(f"💰 Sejauh ini kamu nabung *{format_idr(now_net)}* bulan ini. Pertahankan!")
+        tips.append(f"💰 Sejauh ini kamu nabung <b>{format_idr(now_net)}</b> bulan ini. Pertahankan!")
     elif now_net < 0:
-        tips.append(f"🚨 Pengeluaran > pemasukan sebesar *{format_idr(-now_net)}* bulan ini. Rem dikit yuk.")
+        tips.append(f"🚨 Pengeluaran > pemasukan sebesar <b>{format_idr(-now_net)}</b> bulan ini. Rem dikit yuk.")
 
     return tips[:4]
 
@@ -154,11 +154,11 @@ async def cmd_insight(message: Message) -> None:
     # Belum ada data sama sekali
     if now_t["count"] == 0 and prev_t["count"] == 0:
         await message.answer(
-            "📊 *Insight Keuangan*\n\n"
+            "📊 <b>Insight Keuangan</b>\n\n"
             "Belum ada transaksi untuk dianalisis.\n"
-            "Yuk mulai catat — ketik aja mis. `Makan siang 35rb`, "
+            "Yuk mulai catat — ketik aja mis. <code>Makan siang 35rb</code>, "
             "nanti insight-nya muncul di sini!",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
         return
 
@@ -170,8 +170,8 @@ async def cmd_insight(message: Message) -> None:
 
     # ── Susun pesan ──────────────────────────────────────────────────────────
     lines = [
-        f"📊 *Insight — {_BULAN_ID[m]} {y}*",
-        f"_dibanding {_BULAN_ID[pm]} {py}_\n",
+        f"📊 <b>Insight — {_BULAN_ID[m]} {y}</b>",
+        f"<i>dibanding {_BULAN_ID[pm]} {py}</i>\n",
         _delta_line("📥 Pemasukan", now_t["income"], prev_t["income"], good_when_up=True),
         _delta_line("📤 Pengeluaran", now_t["expense"], prev_t["expense"], good_when_up=False),
         _delta_line("💰 Tabungan", now_net, prev_net, good_when_up=True),
@@ -180,7 +180,7 @@ async def cmd_insight(message: Message) -> None:
     # Top movers kategori
     movers = _top_movers(now_cat, prev_cat)
     if movers:
-        lines.append("\n*Perubahan Kategori Terbesar:*")
+        lines.append("\n<b>Perubahan Kategori Terbesar:</b>")
         for cat, n, p, diff in movers:
             arrow = "🔺" if diff > 0 else "🔻"
             if p == 0:
@@ -190,14 +190,14 @@ async def cmd_insight(message: Message) -> None:
             else:
                 pct = round(abs(diff) / p * 100)
                 detail = f"{format_idr(p)} → {format_idr(n)} ({pct}%)"
-            lines.append(f"{arrow} *{cat}* {detail}")
+            lines.append(f"{arrow} <b>{cat}</b> {detail}")
 
     # Insight kalimat
     tips = _build_insights(now_t, prev_t, now_cat, prev_cat, day_now, days_in_month)
     if tips:
-        lines.append("\n*💡 Catatan:*")
+        lines.append("\n<b>💡 Catatan:</b>")
         lines.extend(tips)
 
-    lines.append("\n_Lihat rincian: /rekap_bulan · /budget_")
+    lines.append("\n<i>Lihat rincian: /rekap_bulan · /budget</i>")
 
-    await message.answer("\n".join(lines), parse_mode="Markdown")
+    await message.answer("\n".join(lines), parse_mode="HTML")
