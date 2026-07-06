@@ -27,26 +27,27 @@ export async function addTransaction(formData: FormData) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const description  = formData.get("description") as string
-  const type         = formData.get("type") as "income" | "expense"
-  const amount       = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
-  const date         = formData.get("date") as string
-  const category_id  = formData.get("category_id") as string | null
-  const notes        = formData.get("notes") as string | null
+  const description    = formData.get("description") as string
+  const type           = formData.get("type") as "income" | "expense"
+  const amount         = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const date           = formData.get("date") as string
+  const category_name  = formData.get("category_name") as string | null
+  const notes          = formData.get("notes") as string | null
 
   if (!description || !type || !amount || !date) {
     return { error: "Deskripsi, tipe, jumlah, dan tanggal wajib diisi" }
   }
 
   const { error } = await supabase.from("transactions").insert({
-    tenant_id:   tenantId,
-    user_id:     user!.id,
+    tenant_id:        tenantId,
+    recorded_by:      user!.id,
     description,
     type,
     amount,
-    date,
-    category_id: category_id || null,
-    notes:       notes || null,
+    source:           "web",
+    transaction_date: date,
+    category_name:    category_name || null,
+    notes:            notes || null,
   })
 
   if (error) return { error: error.message }
