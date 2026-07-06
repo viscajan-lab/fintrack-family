@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { Search, TrendingUp, TrendingDown } from "lucide-react"
+import { useState, useMemo, useTransition } from "react"
+import { Search, TrendingUp, TrendingDown, Trash2, Loader2 } from "lucide-react"
 import { formatIDR, cn } from "@/lib/utils"
+import { deleteTransaction } from "@/app/dashboard/actions"
 import type { TxRow } from "@/lib/data/queries"
 
 type FilterType = "all" | "income" | "expense"
@@ -10,6 +11,21 @@ type FilterType = "all" | "income" | "expense"
 export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<FilterType>("all")
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [delError,  setDelError]  = useState<string | null>(null)
+  const [, startDelete] = useTransition()
+
+  function handleDelete(id: string) {
+    setDelError(null)
+    setPendingId(id)
+    startDelete(async () => {
+      const res = await deleteTransaction(id)
+      setPendingId(null)
+      if (res?.error) { setDelError(res.error); return }
+      setConfirmId(null)
+    })
+  }
 
   const filtered = useMemo(() => initialRows.filter((tx) => {
     const q = search.toLowerCase()
@@ -75,6 +91,12 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
         </div>
       </div>
 
+      {delError && (
+        <p className="text-xs text-[var(--color-expense)] bg-[var(--color-expense)]/10 rounded-lg px-3 py-2">
+          ⚠️ {delError}
+        </p>
+      )}
+
       {/* Table */}
       <div className="rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] overflow-hidden">
         {filtered.length === 0 ? (
@@ -91,6 +113,7 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
                 <th className="text-left px-5 py-3 font-medium">Kategori</th>
                 <th className="text-left px-5 py-3 font-medium">Tanggal</th>
                 <th className="text-right px-5 py-3 font-medium">Jumlah</th>
+                <th className="text-right px-5 py-3 font-medium w-20">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
@@ -112,6 +135,36 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
                     tx.type === "income" ? "text-[var(--color-income)]" : "text-[var(--color-expense)]"
                   )}>
                     {tx.type === "income" ? "+" : "−"}{formatIDR(tx.amount)}
+                  </td>
+                  <td className="px-5 py-3.5 text-right">
+                    {confirmId === tx.id ? (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleDelete(tx.id)}
+                          disabled={pendingId === tx.id}
+                          className="text-xs font-medium px-2 py-1 rounded-md bg-[var(--color-expense)] text-white hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center gap-1"
+                        >
+                          {pendingId === tx.id
+                            ? <Loader2 size={12} className="animate-spin" />
+                            : "Hapus"}
+                        </button>
+                        <button
+                          onClick={() => setConfirmId(null)}
+                          disabled={pendingId === tx.id}
+                          className="text-xs font-medium px-2 py-1 rounded-md border border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-foreground)] transition-colors"
+                        >
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setConfirmId(tx.id); setDelError(null) }}
+                        aria-label="Hapus transaksi"
+                        className="text-[var(--color-muted)] hover:text-[var(--color-expense)] transition-colors p-1"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
