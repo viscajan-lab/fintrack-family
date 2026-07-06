@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useMemo, useTransition } from "react"
-import { Search, TrendingUp, TrendingDown, Trash2, Loader2 } from "lucide-react"
+import { Search, TrendingUp, TrendingDown, Trash2, Pencil, Loader2 } from "lucide-react"
 import { formatIDR, cn } from "@/lib/utils"
 import { deleteTransaction } from "@/app/dashboard/actions"
+import { EditTransactionModal } from "./EditTransactionModal"
 import type { TxRow } from "@/lib/data/queries"
 
 type FilterType = "all" | "income" | "expense"
@@ -14,6 +15,7 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [delError,  setDelError]  = useState<string | null>(null)
+  const [editTx,    setEditTx]    = useState<TxRow | null>(null)
   const [, startDelete] = useTransition()
 
   function handleDelete(id: string) {
@@ -157,13 +159,22 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => { setConfirmId(tx.id); setDelError(null) }}
-                        aria-label="Hapus transaksi"
-                        className="text-[var(--color-muted)] hover:text-[var(--color-expense)] transition-colors p-1"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          onClick={() => setEditTx(tx)}
+                          aria-label="Edit transaksi"
+                          className="text-[var(--color-muted)] hover:text-[var(--color-brand-500)] transition-colors p-1"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => { setConfirmId(tx.id); setDelError(null) }}
+                          aria-label="Hapus transaksi"
+                          className="text-[var(--color-muted)] hover:text-[var(--color-expense)] transition-colors p-1"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -172,6 +183,10 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
           </table>
         )}
       </div>
+
+      {editTx && (
+        <EditTransactionModal tx={editTx} onClose={() => setEditTx(null)} />
+      )}
     </div>
   )
 }

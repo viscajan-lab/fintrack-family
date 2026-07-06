@@ -95,6 +95,44 @@ export async function addBudget(formData: FormData) {
   return { success: true }
 }
 
+// ─── Update Transaction ───────────────────────────────────────────────────────
+
+export async function updateTransaction(id: string, formData: FormData) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const description   = formData.get("description") as string
+  const type          = formData.get("type") as "income" | "expense"
+  const amount        = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const date          = formData.get("date") as string
+  const category_name = formData.get("category_name") as string | null
+  const notes         = formData.get("notes") as string | null
+
+  if (!description || !type || !amount || !date) {
+    return { error: "Deskripsi, tipe, jumlah, dan tanggal wajib diisi" }
+  }
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({
+      description,
+      type,
+      amount,
+      transaction_date: date,
+      category_name: category_name || null,
+      notes:         notes || null,
+    })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard")
+  revalidatePath("/dashboard/transactions")
+  return { success: true }
+}
+
 // ─── Delete Transaction ───────────────────────────────────────────────────────
 
 export async function deleteTransaction(id: string) {
