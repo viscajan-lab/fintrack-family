@@ -55,12 +55,12 @@ export function AddBudgetButton({ currentMonth }: { currentMonth: string }) {
               <div>
                 <label className="block text-xs font-medium text-[var(--color-muted)] mb-1">Kategori</label>
                 <select
-                  name="category_id" required
+                  name="category_name" required
                   className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]"
                 >
                   <option value="">— Pilih kategori —</option>
                   {EXPENSE_CATS.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.name}>{c.name}</option>
                   ))}
                 </select>
               </div>

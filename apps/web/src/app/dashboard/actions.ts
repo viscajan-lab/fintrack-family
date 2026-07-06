@@ -63,21 +63,30 @@ export async function addBudget(formData: FormData) {
   const tenantId  = await getTenantId()
   if (!tenantId) return { error: "Tidak terautentikasi" }
 
-  const category_id = formData.get("category_id") as string
-  const amount      = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
-  const month       = formData.get("month") as string   // YYYY-MM
+  const category_name = formData.get("category_name") as string
+  const amount        = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const monthStr      = formData.get("month") as string   // YYYY-MM
 
-  if (!category_id || !amount || !month) {
+  if (!category_name || !amount || !monthStr) {
     return { error: "Kategori, jumlah, dan bulan wajib diisi" }
   }
 
-  // Upsert: jika sudah ada budget bulan ini untuk kategori ini, update
+  const [yearPart, monthPart] = monthStr.split("-")
+  const year  = parseInt(yearPart, 10)
+  const month = parseInt(monthPart, 10)               // 1-12 (smallint)
+
+  if (!year || !month) {
+    return { error: "Format bulan tidak valid" }
+  }
+
+  // Upsert: jika sudah ada budget kategori ini di bulan+tahun ini, update
   const { error } = await supabase.from("budgets").upsert({
-    tenant_id:   tenantId,
-    category_id,
+    tenant_id:     tenantId,
+    category_name,
     amount,
     month,
-  }, { onConflict: "tenant_id,category_id,month" })
+    year,
+  }, { onConflict: "tenant_id,category_name,month,year" })
 
   if (error) return { error: error.message }
 

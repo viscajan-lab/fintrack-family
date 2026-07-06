@@ -204,24 +204,26 @@ export async function getBudgets(): Promise<BudgetRow[]> {
   if (!tenantId) return []
 
   const now   = new Date()
-  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
-  const from  = `${month}-01`
-  const next  = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const year  = now.getFullYear()
+  const month = now.getMonth() + 1                    // 1-12 (smallint di DB)
+  const from  = `${year}-${String(month).padStart(2, "0")}-01`
+  const next  = new Date(year, month, 1)
   const to    = next.toISOString().split("T")[0]
 
-  // Budgets for this month
+  // Budgets bulan ini (kategori disimpan sbg TEXT di category_name)
   const { data: budgets } = await supabase
     .from("budgets")
-    .select("id, amount, month, categories(name)")
+    .select("id, amount, category_name")
     .eq("tenant_id", tenantId)
+    .eq("year", year)
     .eq("month", month)
 
   if (!budgets?.length) return []
 
-  // Transactions this month grouped by category
+  // Transaksi expense bulan ini, di-agregat by category_name (match cara bot simpan)
   const { data: txs } = await supabase
     .from("transactions")
-    .select("amount, category_id")
+    .select("amount, category_name")
     .eq("tenant_id", tenantId)
     .eq("type", "expense")
     .gte("transaction_date", from)
@@ -229,17 +231,17 @@ export async function getBudgets(): Promise<BudgetRow[]> {
 
   const spentByCategory: Record<string, number> = {}
   for (const tx of txs ?? []) {
-    if (tx.category_id) {
-      spentByCategory[tx.category_id] = (spentByCategory[tx.category_id] ?? 0) + tx.amount
+    if (tx.category_name) {
+      spentByCategory[tx.category_name] = (spentByCategory[tx.category_name] ?? 0) + tx.amount
     }
   }
 
   return budgets.map((b: any) => ({
     id:            b.id,
-    category_name: b.categories?.name ?? "—",
+    category_name: b.category_name,
     amount:        b.amount,
-    spent:         spentByCategory[b.id] ?? 0,
-    month,
+    spent:         spentByCategory[b.category_name] ?? 0,
+    month:         `${year}-${String(month).padStart(2, "0")}`,
   }))
 }
 
