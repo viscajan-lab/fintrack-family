@@ -1,0 +1,12 @@
+{
+  "name": "fintrack-family",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FinTrack Family — monorepo (apps/web Next.js, apps/bot aiogram)",
+  "scripts": {
+    "typecheck": "npm --prefix apps/web run typecheck",
+    "lint": "npm --prefix apps/web run lint",
+    "build": "npm --prefix apps/web run build",
+    "verify": "npm --prefix apps/web run verify"
+  }
+}

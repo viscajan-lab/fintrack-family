@@ -2,22 +2,23 @@
 
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer,
 } from "recharts"
+import type { TooltipContentProps } from "recharts"
 import { formatIDRShort } from "@/lib/utils"
 
 interface DataPoint { name: string; income: number; expense: number }
 
 interface SpendingChartProps { data: DataPoint[] }
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label }: Partial<TooltipContentProps<number, string>>) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-3 text-sm shadow-lg">
       <p className="font-medium mb-1">{label}</p>
-      {payload.map((p: any) => (
+      {payload.map((p) => (
         <p key={p.name} style={{ color: p.color }}>
-          {p.name === "income" ? "Pemasukan" : "Pengeluaran"}: {formatIDRShort(p.value)}
+          {p.name === "income" ? "Pemasukan" : "Pengeluaran"}: {formatIDRShort(Number(p.value))}
         </p>
       ))}
     </div>

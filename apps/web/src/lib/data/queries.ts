@@ -140,7 +140,7 @@ export async function getRecentTransactions(): Promise<TxRow[]> {
     .order("transaction_date", { ascending: false })
     .limit(5)
 
-  return (data ?? []).map((r: any) => ({
+  return (data ?? []).map((r) => ({
     id:            r.id,
     description:   r.description,
     type:          r.type,
@@ -183,7 +183,7 @@ export async function getTransactions(opts?: {
   const { data, count } = await q
 
   return {
-    rows: (data ?? []).map((r: any) => ({
+    rows: (data ?? []).map((r) => ({
       id:            r.id,
       description:   r.description,
       type:          r.type,
@@ -236,7 +236,7 @@ export async function getBudgets(): Promise<BudgetRow[]> {
     }
   }
 
-  return budgets.map((b: any) => ({
+  return budgets.map((b) => ({
     id:            b.id,
     category_name: b.category_name,
     amount:        b.amount,
