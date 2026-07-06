@@ -40,12 +40,16 @@ async function getTenantId(): Promise<string | null> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
 
+  // Prioritaskan tenant yang punya telegram_id (tenant bot) agar deterministik
+  // saat user jadi member >1 tenant; fallback ke keanggotaan terlama.
   const { data } = await supabase
     .from("tenant_members")
-    .select("tenant_id")
+    .select("tenant_id, telegram_id, joined_at")
     .eq("user_id", user.id)
+    .order("telegram_id", { ascending: false, nullsFirst: false })
+    .order("joined_at",   { ascending: true })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   return data?.tenant_id ?? null
 }
@@ -66,8 +70,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     .from("transactions")
     .select("type, amount")
     .eq("tenant_id", tenantId)
-    .gte("date", from)
-    .lt("date", to)
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
 
   const rows = data ?? []
   const income  = rows.filter(r => r.type === "income").reduce((s, r) => s + r.amount, 0)
@@ -105,10 +109,10 @@ export async function getChartData(): Promise<ChartPoint[]> {
 
   const { data } = await supabase
     .from("transactions")
-    .select("type, amount, date")
+    .select("type, amount, date:transaction_date")
     .eq("tenant_id", tenantId)
-    .gte("date", months[0].from)
-    .lt("date", months[months.length - 1].to)
+    .gte("transaction_date", months[0].from)
+    .lt("transaction_date", months[months.length - 1].to)
 
   const rows = data ?? []
 
@@ -131,9 +135,9 @@ export async function getRecentTransactions(): Promise<TxRow[]> {
 
   const { data } = await supabase
     .from("transactions")
-    .select("id, description, type, amount, date, notes, categories(name)")
+    .select("id, description, type, amount, date:transaction_date, notes, category_name")
     .eq("tenant_id", tenantId)
-    .order("date", { ascending: false })
+    .order("transaction_date", { ascending: false })
     .limit(5)
 
   return (data ?? []).map((r: any) => ({
@@ -141,7 +145,7 @@ export async function getRecentTransactions(): Promise<TxRow[]> {
     description:   r.description,
     type:          r.type,
     amount:        r.amount,
-    category_name: r.categories?.name ?? null,
+    category_name: r.category_name ?? null,
     date:          r.date,
     notes:         r.notes ?? null,
   }))
@@ -161,9 +165,9 @@ export async function getTransactions(opts?: {
 
   let q = supabase
     .from("transactions")
-    .select("id, description, type, amount, date, notes, categories(name)", { count: "exact" })
+    .select("id, description, type, amount, date:transaction_date, notes, category_name", { count: "exact" })
     .eq("tenant_id", tenantId)
-    .order("date", { ascending: false })
+    .order("transaction_date", { ascending: false })
 
   if (opts?.type)  q = q.eq("type", opts.type)
   if (opts?.month) {
@@ -171,7 +175,7 @@ export async function getTransactions(opts?: {
     const from   = `${y}-${m}-01`
     const next   = new Date(Number(y), Number(m), 1)
     const to     = next.toISOString().split("T")[0]
-    q = q.gte("date", from).lt("date", to)
+    q = q.gte("transaction_date", from).lt("transaction_date", to)
   }
   if (opts?.limit)  q = q.limit(opts.limit)
   if (opts?.offset) q = q.range(opts.offset, (opts.offset + (opts.limit ?? 20)) - 1)
@@ -184,7 +188,7 @@ export async function getTransactions(opts?: {
       description:   r.description,
       type:          r.type,
       amount:        r.amount,
-      category_name: r.categories?.name ?? null,
+      category_name: r.category_name ?? null,
       date:          r.date,
       notes:         r.notes ?? null,
     })),
@@ -220,8 +224,8 @@ export async function getBudgets(): Promise<BudgetRow[]> {
     .select("amount, category_id")
     .eq("tenant_id", tenantId)
     .eq("type", "expense")
-    .gte("date", from)
-    .lt("date", to)
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
 
   const spentByCategory: Record<string, number> = {}
   for (const tx of txs ?? []) {

@@ -9,10 +9,12 @@ async function getTenantId() {
   if (!user) return null
   const { data } = await supabase
     .from("tenant_members")
-    .select("tenant_id")
+    .select("tenant_id, telegram_id, joined_at")
     .eq("user_id", user.id)
+    .order("telegram_id", { ascending: false, nullsFirst: false })
+    .order("joined_at",   { ascending: true })
     .limit(1)
-    .single()
+    .maybeSingle()
   return data?.tenant_id ?? null
 }
 

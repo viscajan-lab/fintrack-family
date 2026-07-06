@@ -15,13 +15,13 @@ export class SupabaseProvider implements StorageProvider {
   async getTransactions(tenantId: string, filter: TxFilter = {}): Promise<Transaction[]> {
     let q = this.db
       .from("transactions")
-      .select("*")
+      .select("*, date:transaction_date")
       .eq("tenant_id", tenantId)
-      .order("date", { ascending: false })
+      .order("transaction_date", { ascending: false })
 
     if (filter.type)     q = q.eq("type", filter.type)
     if (filter.category) q = q.eq("category", filter.category)
-    if (filter.month)    q = q.like("date", `${filter.month}%`)
+    if (filter.month)    q = q.like("transaction_date", `${filter.month}%`)
     if (filter.limit)    q = q.limit(filter.limit)
     if (filter.offset)   q = q.range(filter.offset, filter.offset + (filter.limit ?? 50) - 1)
 
@@ -116,7 +116,7 @@ export class SupabaseProvider implements StorageProvider {
       .from("transactions")
       .select("type, amount")
       .eq("tenant_id", tenantId)
-      .like("date", `${month}%`)
+      .like("transaction_date", `${month}%`)
 
     if (error) throw new Error(error.message)
 

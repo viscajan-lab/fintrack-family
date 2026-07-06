@@ -22,10 +22,12 @@ async function getTenantId(userId: string): Promise<string | null> {
   const admin = createAdminClient()
   const { data } = await admin
     .from("tenant_members")
-    .select("tenant_id")
+    .select("tenant_id, telegram_id, joined_at")
     .eq("user_id", userId)
+    .order("telegram_id", { ascending: false, nullsFirst: false })
+    .order("joined_at",   { ascending: true })
     .limit(1)
-    .single()
+    .maybeSingle()
   return data?.tenant_id ?? null
 }
 
