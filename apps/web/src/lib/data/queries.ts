@@ -245,6 +245,105 @@ export async function getBudgets(): Promise<BudgetRow[]> {
   }))
 }
 
+// ─── Budget alerts (kategori mendekati / lewat limit) ─────────────────────────
+
+export type BudgetAlertLevel = "warning" | "danger" | "over"
+
+export interface BudgetAlert {
+  category_name: string
+  amount:  number   // limit
+  spent:   number
+  pct:     number   // 0-100+ (dibulatkan)
+  level:   BudgetAlertLevel
+}
+
+/**
+ * Kembalikan kategori yang sudah >=70% terpakai bulan ini.
+ * Ambang mirror bot: 🟡 warning >=70% · 🔴 danger >=90% · 🚨 over >100%.
+ * Diurutkan dari yang paling kritis (pct terbesar) lebih dulu.
+ */
+export async function getBudgetAlerts(): Promise<BudgetAlert[]> {
+  const budgets = await getBudgets()   // reuse: sudah menghitung spent by category_name
+
+  const alerts: BudgetAlert[] = []
+  for (const b of budgets) {
+    if (b.amount <= 0) continue
+    const ratio = b.spent / b.amount
+    if (ratio < 0.70) continue
+
+    const level: BudgetAlertLevel =
+      ratio > 1.0  ? "over"
+      : ratio >= 0.90 ? "danger"
+      : "warning"
+
+    alerts.push({
+      category_name: b.category_name,
+      amount: b.amount,
+      spent:  b.spent,
+      pct:    Math.round(ratio * 100),
+      level,
+    })
+  }
+
+  // paling kritis dulu
+  return alerts.sort((a, b) => b.pct - a.pct)
+}
+
+// ─── Expense breakdown by category (current month) ───────────────────────────
+
+export interface CategorySlice {
+  category_name: string
+  total:  number
+  count:  number
+  pct:    number   // 0-100, share dari total pengeluaran bulan ini
+}
+
+/**
+ * Rincian pengeluaran per kategori bulan berjalan, diurutkan dari terbesar.
+ * Query transactions langsung + agregat by category_name (match cara bot simpan),
+ * konsisten dgn getBudgets. Kategori kosong dikelompokkan jadi "Lainnya".
+ */
+export async function getExpenseByCategory(): Promise<CategorySlice[]> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return []
+
+  const now   = new Date()
+  const from  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+  const next  = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const to    = next.toISOString().split("T")[0]
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("amount, category_name")
+    .eq("tenant_id", tenantId)
+    .eq("type", "expense")
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
+
+  const rows = data ?? []
+  if (!rows.length) return []
+
+  const byCat: Record<string, { total: number; count: number }> = {}
+  for (const r of rows) {
+    const key = r.category_name?.trim() || "Lainnya"
+    byCat[key] ??= { total: 0, count: 0 }
+    byCat[key].total += r.amount
+    byCat[key].count += 1
+  }
+
+  const grand = Object.values(byCat).reduce((s, v) => s + v.total, 0)
+
+  return Object.entries(byCat)
+    .map(([category_name, v]) => ({
+      category_name,
+      total: v.total,
+      count: v.count,
+      pct:   grand > 0 ? Math.round((v.total / grand) * 100) : 0,
+    }))
+    .sort((a, b) => b.total - a.total)
+}
+
 // ─── Categories list ──────────────────────────────────────────────────────────
 
 export async function getCategories() {

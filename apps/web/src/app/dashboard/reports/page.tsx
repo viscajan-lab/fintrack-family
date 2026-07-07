@@ -1,15 +1,17 @@
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react"
 import { StatCard }      from "@/components/ui/StatCard"
 import { SpendingChart } from "@/components/charts/SpendingChart"
+import { CategoryBreakdown } from "@/components/charts/CategoryBreakdown"
 import { formatIDR }     from "@/lib/utils"
-import { getDashboardStats, getChartData } from "@/lib/data/queries"
+import { getDashboardStats, getChartData, getExpenseByCategory } from "@/lib/data/queries"
 
 export const dynamic = "force-dynamic"
 
 export default async function ReportsPage() {
-  const [stats, chartData] = await Promise.all([
+  const [stats, chartData, categories] = await Promise.all([
     getDashboardStats(),
     getChartData(),
+    getExpenseByCategory(),
   ])
 
   const savingsRate = stats.income > 0 ? Math.round((stats.savings / stats.income) * 100) : 0
@@ -28,6 +30,8 @@ export default async function ReportsPage() {
       </div>
 
       <SpendingChart data={chartData} />
+
+      <CategoryBreakdown data={categories} />
     </div>
   )
 }

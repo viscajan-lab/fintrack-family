@@ -1,11 +1,15 @@
-import { getBudgets } from "@/lib/data/queries"
+import { getBudgets, getBudgetAlerts } from "@/lib/data/queries"
 import { BudgetList }  from "@/components/budget/BudgetList"
+import { BudgetAlertBanner } from "@/components/budget/BudgetAlertBanner"
 import { AddBudgetButton } from "@/components/budget/AddBudgetButton"
 
 export const dynamic = "force-dynamic"
 
 export default async function BudgetPage() {
-  const budgets = await getBudgets()
+  const [budgets, budgetAlerts] = await Promise.all([
+    getBudgets(),
+    getBudgetAlerts(),
+  ])
 
   const now       = new Date()
   const MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"]
@@ -23,6 +27,8 @@ export default async function BudgetPage() {
         </div>
         <AddBudgetButton currentMonth={curMonth} />
       </div>
+
+      <BudgetAlertBanner alerts={budgetAlerts} />
 
       <BudgetList budgets={budgets} />
     </div>

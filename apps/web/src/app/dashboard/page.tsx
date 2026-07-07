@@ -1,20 +1,23 @@
 import { TrendingUp, TrendingDown, Wallet, ArrowLeftRight } from "lucide-react"
 import { StatCard }      from "@/components/ui/StatCard"
 import { SpendingChart } from "@/components/charts/SpendingChart"
+import { BudgetAlertBanner } from "@/components/budget/BudgetAlertBanner"
 import { formatIDR }     from "@/lib/utils"
 import {
   getDashboardStats,
   getChartData,
   getRecentTransactions,
+  getBudgetAlerts,
 } from "@/lib/data/queries"
 
 export const dynamic = "force-dynamic"
 
 export default async function DashboardPage() {
-  const [stats, chartData, recentTx] = await Promise.all([
+  const [stats, chartData, recentTx, budgetAlerts] = await Promise.all([
     getDashboardStats(),
     getChartData(),
     getRecentTransactions(),
+    getBudgetAlerts(),
   ])
 
   const now        = new Date()
@@ -29,6 +32,9 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">Beranda</h1>
         <p className="text-sm text-[var(--color-muted)] mt-0.5">{monthLabel} — ringkasan keuangan keluarga</p>
       </div>
+
+      {/* Budget alerts */}
+      <BudgetAlertBanner alerts={budgetAlerts} />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
