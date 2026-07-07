@@ -77,6 +77,22 @@ export interface InsightData {
   tips: string[]
 }
 
+export interface Member {
+  id: string
+  display_name: string
+  role: "admin" | "member"
+  isMe: boolean           // baris ini = user yang sedang login
+  linked: boolean         // sudah punya akun web (user_id terisi)
+}
+
+export interface MembersData {
+  familyName: string
+  tenantId: string
+  members: Member[]
+  isAdmin: boolean        // user login = admin (boleh lihat link undangan)
+  inviteLink: string | null
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getTenantId(): Promise<string | null> {
@@ -544,3 +560,50 @@ export async function getInsight(): Promise<InsightData> {
     tips: tips.slice(0, 4),
   }
 }
+
+// ─── Anggota keluarga (mirror bot /anggota) ───────────────────────────────────
+// Read-only + link undangan. Join member baru tetap lewat bot (deep-link
+// Telegram), jadi web hanya menampilkan daftar & memunculkan link untuk admin.
+export async function getMembers(): Promise<MembersData | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const tenantId = await getTenantId()
+  if (!user || !tenantId) return null
+
+  const { data: tenant } = await supabase
+    .from("tenants")
+    .select("name")
+    .eq("id", tenantId)
+    .maybeSingle()
+
+  const { data: rows } = await supabase
+    .from("tenant_members")
+    .select("id, display_name, role, user_id")
+    .eq("tenant_id", tenantId)
+    .order("role", { ascending: true })       // admin dulu (alfabetis: admin < member)
+    .order("display_name", { ascending: true })
+
+  const members: Member[] = (rows ?? []).map((r) => ({
+    id: r.id,
+    display_name: r.display_name ?? "Tanpa nama",
+    role: r.role === "admin" ? "admin" : "member",
+    isMe: r.user_id === user.id,
+    linked: !!r.user_id,
+  }))
+
+  const isAdmin = members.some((m) => m.isMe && m.role === "admin")
+  const botUser = process.env.NEXT_PUBLIC_BOT_USERNAME
+  const inviteLink =
+    isAdmin && botUser
+      ? `https://t.me/${botUser}?start=join_${tenantId.replace(/-/g, "_")}`
+      : null
+
+  return {
+    familyName: tenant?.name ?? "Keluarga",
+    tenantId,
+    members,
+    isAdmin,
+    inviteLink,
+  }
+}
+

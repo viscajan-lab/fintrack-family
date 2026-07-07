@@ -11,6 +11,7 @@ import {
   Repeat,
   Link2,
   Sparkles,
+  Users,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -23,6 +24,7 @@ const NAV = [
   { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
   { href: "/dashboard/reports",      label: "Laporan",    icon: Wallet },
   { href: "/dashboard/insight",      label: "Insight",    icon: Sparkles },
+  { href: "/dashboard/members",      label: "Anggota",    icon: Users },
   { href: "/dashboard/link",         label: "Hubungkan",  icon: Link2 },
   { href: "/dashboard/settings",     label: "Pengaturan", icon: Settings },
 ]
