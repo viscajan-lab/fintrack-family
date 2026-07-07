@@ -44,6 +44,39 @@ export interface RecurringRule {
   active: boolean
 }
 
+export interface DeltaStat {
+  now: number
+  prev: number
+  diff: number
+  pct: number | null      // null = tak terdefinisi (prev 0)
+  goodWhenUp: boolean
+}
+
+export interface CategoryMover {
+  category: string
+  now: number
+  prev: number
+  diff: number
+  pct: number | null
+}
+
+export interface InsightData {
+  hasData: boolean
+  month: number           // 1-12
+  year: number
+  prevMonth: number
+  prevYear: number
+  income: DeltaStat
+  expense: DeltaStat
+  savings: DeltaStat
+  movers: CategoryMover[]
+  dailyAvg: number
+  projectedExpense: number
+  daysInMonth: number
+  dayNow: number
+  tips: string[]
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getTenantId(): Promise<string | null> {
@@ -386,4 +419,128 @@ export async function getRecurringRules(): Promise<RecurringRule[]> {
     .order("day_of_month", { ascending: true })
 
   return (data ?? []) as RecurringRule[]
+}
+
+// ─── Insight / analitik (bulan ini vs bulan lalu) ─────────────────────────────
+// Mirror logika bot /insight: read-only dari tabel transactions, tanpa migrasi.
+
+function monthRange(month: number, year: number): { from: string; to: string } {
+  const from = `${year}-${String(month).padStart(2, "0")}-01`
+  const nm = month === 12 ? 1 : month + 1
+  const ny = month === 12 ? year + 1 : year
+  const to = `${ny}-${String(nm).padStart(2, "0")}-01`  // eksklusif
+  return { from, to }
+}
+
+function delta(now: number, prev: number, goodWhenUp: boolean): DeltaStat {
+  const diff = now - prev
+  const pct = prev === 0 ? null : Math.round((Math.abs(diff) / prev) * 100)
+  return { now, prev, diff, pct, goodWhenUp }
+}
+
+export async function getInsight(): Promise<InsightData> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const year = now.getFullYear()
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear = month === 1 ? year - 1 : year
+  const daysInMonth = new Date(year, month, 0).getDate()
+  const dayNow = now.getDate()
+
+  const empty: InsightData = {
+    hasData: false, month, year, prevMonth, prevYear,
+    income: delta(0, 0, true), expense: delta(0, 0, false), savings: delta(0, 0, true),
+    movers: [], dailyAvg: 0, projectedExpense: 0, daysInMonth, dayNow, tips: [],
+  }
+  if (!tenantId) return empty
+
+  const cur = monthRange(month, year)
+  const prv = monthRange(prevMonth, prevYear)
+
+  // Satu query menutup dua bulan (prev.from → cur.to eksklusif), lalu dipilah in-memory.
+  const { data } = await supabase
+    .from("transactions")
+    .select("type, amount, category_name, transaction_date")
+    .eq("tenant_id", tenantId)
+    .gte("transaction_date", prv.from)
+    .lt("transaction_date", cur.to)
+
+  const rows = data ?? []
+  if (rows.length === 0) return empty
+
+  const inCur = (d: string) => d >= cur.from && d < cur.to
+  const inPrv = (d: string) => d >= prv.from && d < prv.to
+
+  const sum = (pred: (r: (typeof rows)[number]) => boolean) =>
+    rows.filter(pred).reduce((s, r) => s + r.amount, 0)
+
+  const nowInc = sum(r => r.type === "income" && inCur(r.transaction_date))
+  const nowExp = sum(r => r.type === "expense" && inCur(r.transaction_date))
+  const prevInc = sum(r => r.type === "income" && inPrv(r.transaction_date))
+  const prevExp = sum(r => r.type === "expense" && inPrv(r.transaction_date))
+
+  // Pengeluaran per kategori tiap bulan
+  const catAgg = (pred: (r: (typeof rows)[number]) => boolean) => {
+    const m: Record<string, number> = {}
+    for (const r of rows) {
+      if (r.type !== "expense" || !pred(r)) continue
+      const k = r.category_name || "Lainnya"
+      m[k] = (m[k] ?? 0) + r.amount
+    }
+    return m
+  }
+  const nowCat = catAgg(r => inCur(r.transaction_date))
+  const prevCat = catAgg(r => inPrv(r.transaction_date))
+
+  // Top movers: perubahan absolut terbesar (naik & turun)
+  const keys = new Set([...Object.keys(nowCat), ...Object.keys(prevCat)])
+  const movers: CategoryMover[] = []
+  for (const k of keys) {
+    const n = nowCat[k] ?? 0
+    const p = prevCat[k] ?? 0
+    if (n === p) continue
+    movers.push({ category: k, now: n, prev: p, diff: n - p, pct: p === 0 ? null : Math.round((Math.abs(n - p) / p) * 100) })
+  }
+  movers.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+
+  const nowNet = nowInc - nowExp
+  const prevNet = prevInc - prevExp
+  const dailyAvg = dayNow > 0 ? Math.round(nowExp / dayNow) : 0
+  const projectedExpense = dailyAvg * daysInMonth
+
+  // ── Tips kalimat (mirror _build_insights bot) ──
+  const tips: string[] = []
+  if (prevExp > 0 && nowExp > prevExp * 1.15) {
+    tips.push(`⚠️ Pengeluaran naik ${Math.round(((nowExp - prevExp) / prevExp) * 100)}% dari bulan lalu — cek kategori yang melonjak di bawah.`)
+  } else if (prevExp > 0 && nowExp < prevExp * 0.85) {
+    tips.push(`👏 Pengeluaran turun ${Math.round(((prevExp - nowExp) / prevExp) * 100)}% dari bulan lalu. Hemat, mantap!`)
+  }
+  const topCat = Object.keys(nowCat).sort((a, b) => nowCat[b] - nowCat[a])[0]
+  if (topCat) {
+    const v = nowCat[topCat]
+    const pv = prevCat[topCat] ?? 0
+    tips.push(
+      pv > 0 && v > pv * 1.3
+        ? `🔍 ${topCat} jadi pos terbesar & naik ${Math.round(((v - pv) / pv) * 100)}% — pantau ekstra ya.`
+        : `🔍 Pos terbesar bulan ini: ${topCat}.`,
+    )
+  }
+  if (dayNow > 0 && nowExp > 0 && projectedExpense > nowExp) {
+    tips.push(`📈 Rata-rata harian → proyeksi akhir bulan sekitar segitu. Sisakan ruang ya.`)
+  }
+  if (nowNet > 0) tips.push(`💰 Sejauh ini kamu nabung bulan ini. Pertahankan!`)
+  else if (nowNet < 0) tips.push(`🚨 Pengeluaran > pemasukan bulan ini. Rem dikit yuk.`)
+
+  return {
+    hasData: true, month, year, prevMonth, prevYear,
+    income: delta(nowInc, prevInc, true),
+    expense: delta(nowExp, prevExp, false),
+    savings: delta(nowNet, prevNet, true),
+    movers: movers.slice(0, 5),
+    dailyAvg, projectedExpense, daysInMonth, dayNow,
+    tips: tips.slice(0, 4),
+  }
 }
