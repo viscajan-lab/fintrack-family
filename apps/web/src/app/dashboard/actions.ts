@@ -133,6 +133,109 @@ export async function updateTransaction(id: string, formData: FormData) {
   return { success: true }
 }
 
+// ─── Recurring rules (tagihan/langganan berulang) ─────────────────────────────
+
+export async function addRecurring(formData: FormData) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const description   = formData.get("description") as string
+  const type          = (formData.get("type") as "income" | "expense") || "expense"
+  const category_name = formData.get("category_name") as string
+  const amount        = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const day_of_month  = parseInt(formData.get("day_of_month") as string, 10)
+  const mode          = (formData.get("mode") as "auto" | "reminder") || "auto"
+
+  if (!description || !category_name || !amount || !day_of_month) {
+    return { error: "Nama, kategori, nominal, dan tanggal wajib diisi" }
+  }
+  if (day_of_month < 1 || day_of_month > 31) {
+    return { error: "Tanggal harus antara 1–31" }
+  }
+
+  const { error } = await supabase.from("recurring_rules").insert({
+    tenant_id:     tenantId,
+    type,
+    amount,
+    category_name,
+    description,
+    day_of_month,
+    mode,
+    active:        true,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/recurring")
+  return { success: true }
+}
+
+export async function updateRecurring(id: string, formData: FormData) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const description   = formData.get("description") as string
+  const type          = (formData.get("type") as "income" | "expense") || "expense"
+  const category_name = formData.get("category_name") as string
+  const amount        = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const day_of_month  = parseInt(formData.get("day_of_month") as string, 10)
+  const mode          = (formData.get("mode") as "auto" | "reminder") || "auto"
+
+  if (!description || !category_name || !amount || !day_of_month) {
+    return { error: "Nama, kategori, nominal, dan tanggal wajib diisi" }
+  }
+  if (day_of_month < 1 || day_of_month > 31) {
+    return { error: "Tanggal harus antara 1–31" }
+  }
+
+  const { error } = await supabase
+    .from("recurring_rules")
+    .update({ description, type, amount, category_name, day_of_month, mode })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/recurring")
+  return { success: true }
+}
+
+export async function toggleRecurring(id: string, active: boolean) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { error } = await supabase
+    .from("recurring_rules")
+    .update({ active })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/recurring")
+  return { success: true }
+}
+
+export async function deleteRecurring(id: string) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { error } = await supabase
+    .from("recurring_rules")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/recurring")
+  return { success: true }
+}
+
 // ─── Delete Transaction ───────────────────────────────────────────────────────
 
 export async function deleteTransaction(id: string) {

@@ -33,6 +33,17 @@ export interface ChartPoint {
   expense: number
 }
 
+export interface RecurringRule {
+  id: string
+  description: string
+  type: "income" | "expense"
+  amount: number
+  category_name: string
+  day_of_month: number      // 1-31
+  mode: "auto" | "reminder"
+  active: boolean
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getTenantId(): Promise<string | null> {
@@ -358,4 +369,21 @@ export async function getCategories() {
     .order("name")
 
   return data ?? []
+}
+
+// ─── Recurring rules (tagihan/langganan berulang) ────────────────────────────
+
+export async function getRecurringRules(): Promise<RecurringRule[]> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return []
+
+  const { data } = await supabase
+    .from("recurring_rules")
+    .select("id, description, type, amount, category_name, day_of_month, mode, active")
+    .eq("tenant_id", tenantId)
+    .order("active", { ascending: false })
+    .order("day_of_month", { ascending: true })
+
+  return (data ?? []) as RecurringRule[]
 }

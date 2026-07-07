@@ -8,6 +8,7 @@ import {
   PieChart,
   Settings,
   Wallet,
+  Repeat,
   Link2,
   LogOut,
 } from "lucide-react"
@@ -18,6 +19,7 @@ const NAV = [
   { href: "/dashboard",              label: "Beranda",    icon: LayoutDashboard },
   { href: "/dashboard/transactions", label: "Transaksi",  icon: ArrowLeftRight },
   { href: "/dashboard/budget",       label: "Budget",     icon: PieChart },
+  { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
   { href: "/dashboard/reports",      label: "Laporan",    icon: Wallet },
   { href: "/dashboard/link",         label: "Hubungkan",  icon: Link2 },
   { href: "/dashboard/settings",     label: "Pengaturan", icon: Settings },
