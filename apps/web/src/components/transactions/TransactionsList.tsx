@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useMemo, useTransition } from "react"
-import { Search, TrendingUp, TrendingDown, Trash2, Pencil, Loader2 } from "lucide-react"
+import { useState, useMemo, useTransition, useRef, useEffect } from "react"
+import { Search, TrendingUp, TrendingDown, Trash2, Pencil, Loader2, Download, FileText, FileSpreadsheet } from "lucide-react"
 import { formatIDR, cn } from "@/lib/utils"
 import { deleteTransaction } from "@/app/dashboard/actions"
+import { exportTransactionsCSV, exportTransactionsPDF } from "@/lib/export"
 import { EditTransactionModal } from "./EditTransactionModal"
 import type { TxRow } from "@/lib/data/queries"
 
@@ -16,7 +17,21 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [delError,  setDelError]  = useState<string | null>(null)
   const [editTx,    setEditTx]    = useState<TxRow | null>(null)
+  const [exportOpen, setExportOpen] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
   const [, startDelete] = useTransition()
+
+  // Tutup menu export saat klik di luar
+  useEffect(() => {
+    if (!exportOpen) return
+    function onClick(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onClick)
+    return () => document.removeEventListener("mousedown", onClick)
+  }, [exportOpen])
 
   function handleDelete(id: string) {
     setDelError(null)
@@ -90,6 +105,42 @@ export function TransactionsList({ initialRows }: { initialRows: TxRow[] }) {
               {f === "all" ? "Semua" : f === "income" ? "Pemasukan" : "Pengeluaran"}
             </button>
           ))}
+        </div>
+
+        {/* Export dropdown */}
+        <div className="relative ml-auto" ref={exportRef}>
+          <button
+            onClick={() => setExportOpen((o) => !o)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-border)]/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download size={15} />
+            Export
+          </button>
+          {exportOpen && (
+            <div className="absolute right-0 mt-1 w-48 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg z-10 overflow-hidden">
+              <button
+                onClick={() => { exportTransactionsCSV(filtered); setExportOpen(false) }}
+                className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-left hover:bg-[var(--color-border)]/40 transition-colors"
+              >
+                <FileSpreadsheet size={16} className="text-[var(--color-income)]" />
+                <div>
+                  <div className="font-medium">Export CSV</div>
+                  <div className="text-xs text-[var(--color-muted)]">Buka di Excel/Sheets</div>
+                </div>
+              </button>
+              <button
+                onClick={() => { exportTransactionsPDF(filtered); setExportOpen(false) }}
+                className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-left hover:bg-[var(--color-border)]/40 transition-colors border-t border-[var(--color-border)]"
+              >
+                <FileText size={16} className="text-[var(--color-expense)]" />
+                <div>
+                  <div className="font-medium">Export PDF</div>
+                  <div className="text-xs text-[var(--color-muted)]">Cetak / simpan PDF</div>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
