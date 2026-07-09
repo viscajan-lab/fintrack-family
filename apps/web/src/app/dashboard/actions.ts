@@ -255,3 +255,87 @@ export async function deleteTransaction(id: string) {
   revalidatePath("/dashboard/transactions")
   return { success: true }
 }
+
+// ─── Savings goals (target tabungan keluarga) ─────────────────────────────────
+
+export async function addSavingsGoal(formData: FormData) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const name     = (formData.get("name") as string)?.trim()
+  const target   = parseInt(((formData.get("target_amount") as string) || "").replace(/\D/g, ""), 10)
+  const deadline = (formData.get("deadline") as string) || null
+  const note     = ((formData.get("note") as string) || "").trim() || null
+
+  if (!name)                  return { error: "Nama target wajib diisi" }
+  if (!target || target <= 0) return { error: "Target nominal harus lebih dari 0" }
+
+  const { error } = await supabase.from("savings_goals").insert({
+    tenant_id:     tenantId,
+    name,
+    target_amount: target,
+    deadline,
+    note,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/savings")
+  return { success: true }
+}
+
+export async function addSavingsContribution(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const delta = parseInt(((formData.get("amount") as string) || "").replace(/\D/g, ""), 10)
+  if (!delta || delta === 0) return { error: "Jumlah setoran wajib diisi" }
+
+  // Ambil nilai saat ini (RLS batasi ke tenant sendiri)
+  const { data: goal, error: readErr } = await supabase
+    .from("savings_goals")
+    .select("saved_amount, target_amount")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (readErr) return { error: readErr.message }
+  if (!goal)   return { error: "Target tidak ditemukan" }
+
+  const newSaved = Math.max((goal.saved_amount ?? 0) + delta, 0)
+  const achieved = newSaved >= (goal.target_amount ?? 0)
+
+  const { error } = await supabase
+    .from("savings_goals")
+    .update({
+      saved_amount: newSaved,
+      achieved_at:  achieved ? new Date().toISOString() : null,
+      updated_at:   new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/savings")
+  return { success: true }
+}
+
+export async function deleteSavingsGoal(id: string) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { error } = await supabase
+    .from("savings_goals")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/savings")
+  return { success: true }
+}

@@ -93,6 +93,19 @@ export interface MembersData {
   inviteLink: string | null
 }
 
+export interface SavingsGoal {
+  id: string
+  name: string
+  target_amount: number
+  saved_amount: number
+  deadline: string | null      // YYYY-MM-DD
+  note: string | null
+  achieved: boolean            // saved >= target
+  pct: number                  // 0-100 (clamped)
+  remaining: number            // max(target - saved, 0)
+  daysLeft: number | null      // null jika tak ada deadline
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getTenantId(): Promise<string | null> {
@@ -605,5 +618,49 @@ export async function getMembers(): Promise<MembersData | null> {
     isAdmin,
     inviteLink,
   }
+}
+
+// ─── Savings goals (target tabungan keluarga) ────────────────────────────────
+
+export async function getSavingsGoals(): Promise<SavingsGoal[]> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return []
+
+  const { data } = await supabase
+    .from("savings_goals")
+    .select("id, name, target_amount, saved_amount, deadline, note")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  return (data ?? []).map((g) => {
+    const target    = g.target_amount ?? 0
+    const saved     = g.saved_amount ?? 0
+    const achieved  = target > 0 && saved >= target
+    const pct       = target > 0 ? Math.min(Math.round((saved / target) * 100), 100) : 0
+    const remaining = Math.max(target - saved, 0)
+
+    let daysLeft: number | null = null
+    if (g.deadline) {
+      const d = new Date(`${g.deadline}T00:00:00`)
+      daysLeft = Math.ceil((d.getTime() - today.getTime()) / 86_400_000)
+    }
+
+    return {
+      id: g.id,
+      name: g.name,
+      target_amount: target,
+      saved_amount: saved,
+      deadline: g.deadline,
+      note: g.note,
+      achieved,
+      pct,
+      remaining,
+      daysLeft,
+    }
+  })
 }
 
