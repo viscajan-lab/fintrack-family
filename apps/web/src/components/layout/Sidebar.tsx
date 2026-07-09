@@ -13,6 +13,7 @@ import {
   Sparkles,
   Users,
   PiggyBank,
+  Tags,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -23,6 +24,7 @@ const NAV = [
   { href: "/dashboard/transactions", label: "Transaksi",  icon: ArrowLeftRight },
   { href: "/dashboard/budget",       label: "Budget",     icon: PieChart },
   { href: "/dashboard/savings",      label: "Tabungan",   icon: PiggyBank },
+  { href: "/dashboard/categories",   label: "Kategori",   icon: Tags },
   { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
   { href: "/dashboard/reports",      label: "Laporan",    icon: Wallet },
   { href: "/dashboard/insight",      label: "Insight",    icon: Sparkles },

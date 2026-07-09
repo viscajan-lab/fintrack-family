@@ -339,3 +339,89 @@ export async function deleteSavingsGoal(id: string) {
   revalidatePath("/dashboard/savings")
   return { success: true }
 }
+
+// ─── Categories (kelola kategori custom keluarga) ────────────────────────────
+
+const CAT_TYPES = ["income", "expense", "both"] as const
+
+// Kategori dipakai di banyak form; revalidasi semua route yang menampilkannya.
+function revalidateCategoryConsumers() {
+  revalidatePath("/dashboard/categories")
+  revalidatePath("/dashboard/transactions")
+  revalidatePath("/dashboard/recurring")
+  revalidatePath("/dashboard/budget")
+}
+
+export async function addCategory(formData: FormData) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const name  = ((formData.get("name") as string) ?? "").trim()
+  const emoji = ((formData.get("emoji") as string) ?? "").trim()
+  const type  = formData.get("type") as string
+
+  if (!name) return { error: "Nama kategori wajib diisi" }
+  if (!CAT_TYPES.includes(type as (typeof CAT_TYPES)[number]))
+    return { error: "Tipe kategori tidak valid" }
+
+  const { error } = await supabase.from("categories").insert({
+    tenant_id: tenantId,
+    name,
+    emoji: emoji || null,
+    type,
+  })
+
+  if (error) {
+    if (error.code === "23505") return { error: "Kategori dengan nama itu sudah ada" }
+    return { error: error.message }
+  }
+
+  revalidateCategoryConsumers()
+  return { success: true }
+}
+
+export async function updateCategory(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const name  = ((formData.get("name") as string) ?? "").trim()
+  const emoji = ((formData.get("emoji") as string) ?? "").trim()
+  const type  = formData.get("type") as string
+
+  if (!name) return { error: "Nama kategori wajib diisi" }
+  if (!CAT_TYPES.includes(type as (typeof CAT_TYPES)[number]))
+    return { error: "Tipe kategori tidak valid" }
+
+  const { error } = await supabase
+    .from("categories")
+    .update({ name, emoji: emoji || null, type })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt — cegah edit kategori default (tenant_id NULL)
+
+  if (error) {
+    if (error.code === "23505") return { error: "Kategori dengan nama itu sudah ada" }
+    return { error: error.message }
+  }
+
+  revalidateCategoryConsumers()
+  return { success: true }
+}
+
+export async function deleteCategory(id: string) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { error } = await supabase
+    .from("categories")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt — kategori default (tenant_id NULL) tak akan match
+
+  if (error) return { error: error.message }
+
+  revalidateCategoryConsumers()
+  return { success: true }
+}

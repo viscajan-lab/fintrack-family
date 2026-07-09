@@ -106,6 +106,14 @@ export interface SavingsGoal {
   daysLeft: number | null      // null jika tak ada deadline
 }
 
+export interface Category {
+  id: string
+  name: string
+  emoji: string | null
+  type: "income" | "expense" | "both"
+  isDefault: boolean           // true = kategori bawaan global (tenant_id NULL), tak bisa diedit/hapus
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getTenantId(): Promise<string | null> {
@@ -417,22 +425,6 @@ export async function getExpenseByCategory(): Promise<CategorySlice[]> {
     .sort((a, b) => b.total - a.total)
 }
 
-// ─── Categories list ──────────────────────────────────────────────────────────
-
-export async function getCategories() {
-  const supabase = await createClient()
-  const tenantId = await getTenantId()
-  if (!tenantId) return []
-
-  const { data } = await supabase
-    .from("categories")
-    .select("id, name, type, icon")
-    .eq("tenant_id", tenantId)
-    .order("name")
-
-  return data ?? []
-}
-
 // ─── Recurring rules (tagihan/langganan berulang) ────────────────────────────
 
 export async function getRecurringRules(): Promise<RecurringRule[]> {
@@ -662,5 +654,33 @@ export async function getSavingsGoals(): Promise<SavingsGoal[]> {
       daysLeft,
     }
   })
+}
+
+// ─── Categories (kategori custom keluarga) ───────────────────────────────────
+
+export async function getCategories(): Promise<Category[]> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+
+  // RLS: SELECT mengembalikan default global (tenant_id NULL) + custom milik tenant ini.
+  // Query eksplisit meng-OR-kan agar tetap benar walau dipanggil tanpa konteks tenant.
+  const filter = tenantId
+    ? `tenant_id.is.null,tenant_id.eq.${tenantId}`
+    : "tenant_id.is.null"
+
+  const { data } = await supabase
+    .from("categories")
+    .select("id, name, emoji, type, tenant_id, sort_order")
+    .or(filter)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true })
+
+  return (data ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    emoji: c.emoji,
+    type: (c.type === "income" || c.type === "expense") ? c.type : "both",
+    isDefault: c.tenant_id === null,
+  }))
 }
 
