@@ -19,7 +19,7 @@ python main.py
 | `TELEGRAM_BOT_TOKEN` | Token dari @BotFather |
 | `SUPABASE_URL` | URL project Supabase |
 | `SUPABASE_SERVICE_KEY` | Service role key Supabase |
-| `OPENAI_API_KEY` | (Opsional) GPT-4o-mini fallback parser |
+| `GROQ_API_KEY` | (Opsional) Groq LLM: fallback parser teks + baca nota via foto |
 
 ## Deploy ke Railway
 

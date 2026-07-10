@@ -10,12 +10,31 @@ import logging
 from os import getenv
 from typing import Optional
 
-# Daftar kategori valid — dipakai regex, OpenAI teks, & vision nota.
+# Daftar kategori valid — dipakai regex, LLM teks, & vision nota.
 VALID_CATEGORIES = [
     "Makanan & Minuman", "Transportasi", "Rumah & Tagihan", "Belanja",
     "Kesehatan", "Pendidikan", "Hiburan", "Gaji", "Usaha / Freelance",
     "Transfer Masuk", "Lainnya",
 ]
+
+# ── Groq (OpenAI-compatible) — teks & vision ─────────────────────────────────
+GROQ_BASE_URL   = "https://api.groq.com/openai/v1"
+GROQ_TEXT_MODEL   = "llama-3.3-70b-versatile"
+GROQ_VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
+
+def _groq_client():
+    """AsyncOpenAI yang menunjuk ke Groq. None kalau GROQ_API_KEY kosong."""
+    api_key = getenv("GROQ_API_KEY")
+    if not api_key:
+        return None
+    from openai import AsyncOpenAI
+    return AsyncOpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
+
+
+def _strip_json_fence(raw: str) -> str:
+    """Buang fence markdown ```json ... ``` kalau model membungkusnya."""
+    return re.sub(r"^```(?:json)?|```$", "", raw.strip()).strip()
 
 log = logging.getLogger(__name__)
 
@@ -141,19 +160,16 @@ def _regex_parse(text: str) -> Optional[dict]:
     }
 
 
-async def _openai_parse(text: str) -> Optional[dict]:
+async def _llm_parse(text: str) -> Optional[dict]:
     """
-    Tier 2: fallback ke GPT-4o-mini untuk input ambigu.
+    Tier 2: fallback ke Groq LLM untuk input ambigu.
     Hanya dipanggil jika regex gagal.
     """
-    api_key = getenv("OPENAI_API_KEY")
-    if not api_key:
+    client = _groq_client()
+    if not client:
         return None
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key)
-
         prompt = f"""Kamu adalah parser transaksi keuangan. 
 Extract informasi dari teks berikut dan kembalikan JSON saja (tanpa markdown).
 
@@ -164,7 +180,7 @@ Format JSON:
   "type": "income" atau "expense",
   "amount": integer dalam rupiah,
   "description": string deskripsi singkat,
-  "category_name": salah satu dari ["Makanan & Minuman", "Transportasi", "Rumah & Tagihan", "Belanja", "Kesehatan", "Pendidikan", "Hiburan", "Gaji", "Usaha / Freelance", "Transfer Masuk", "Lainnya"]
+  "category_name": salah satu dari {VALID_CATEGORIES}
 }}
 
 Aturan:
@@ -172,14 +188,14 @@ Aturan:
 - Jika tidak bisa diparsing, kembalikan null"""
 
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=GROQ_TEXT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200,
             temperature=0,
         )
 
-        raw = (resp.choices[0].message.content or "").strip()
-        if raw.lower() == "null":
+        raw = _strip_json_fence(resp.choices[0].message.content or "")
+        if raw.lower() == "null" or not raw:
             return None
 
         data = json.loads(raw)
@@ -187,13 +203,13 @@ Aturan:
         return data
 
     except Exception as e:
-        log.warning(f"OpenAI parse failed: {e}")
+        log.warning(f"Groq text parse failed: {e}")
         return None
 
 
 async def parse_transaction(text: str) -> Optional[dict]:
     """
-    Entry point parser. Tier 1 regex → Tier 2 OpenAI fallback.
+    Entry point parser. Tier 1 regex → Tier 2 Groq LLM fallback.
     Returns dict dengan keys: type, amount, description, category_name, source
     """
     result = _regex_parse(text)
@@ -201,28 +217,25 @@ async def parse_transaction(text: str) -> Optional[dict]:
         log.debug(f"Parsed via regex: {result}")
         return result
 
-    log.debug(f"Regex failed, trying OpenAI for: {text!r}")
-    result = await _openai_parse(text)
+    log.debug(f"Regex failed, trying Groq for: {text!r}")
+    result = await _llm_parse(text)
     if result:
-        log.debug(f"Parsed via OpenAI: {result}")
+        log.debug(f"Parsed via Groq: {result}")
     return result
 
 
 async def parse_receipt_image(image_bytes: bytes) -> Optional[dict]:
     """
-    Baca foto nota/struk belanja pakai GPT-4o-mini vision.
+    Baca foto nota/struk belanja pakai Groq vision (llama-4-scout).
     Returns dict {type, amount, description, category_name, source} — sama
     persis skema parse_transaction, biar reuse alur konfirmasi di handler.
     None kalau tak ada API key, bukan nota, atau gagal parse.
     """
-    api_key = getenv("OPENAI_API_KEY")
-    if not api_key:
+    client = _groq_client()
+    if not client:
         return None
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key)
-
         b64 = base64.b64encode(image_bytes).decode()
         prompt = f"""Kamu adalah pembaca nota/struk belanja Indonesia.
 Baca gambar dan kembalikan JSON saja (tanpa markdown):
@@ -237,7 +250,7 @@ Aturan:
 - Kalau gambar bukan nota/struk atau total tak terbaca, kembalikan null."""
 
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=GROQ_VISION_MODEL,
             messages=[{
                 "role": "user",
                 "content": [
@@ -250,9 +263,7 @@ Aturan:
             temperature=0,
         )
 
-        raw = (resp.choices[0].message.content or "").strip()
-        # Bersihkan fence markdown kalau model bandel
-        raw = re.sub(r"^```(?:json)?|```$", "", raw).strip()
+        raw = _strip_json_fence(resp.choices[0].message.content or "")
         if raw.lower() == "null" or not raw:
             return None
 
@@ -266,5 +277,5 @@ Aturan:
         return data
 
     except Exception as e:
-        log.warning(f"OpenAI vision parse failed: {e}")
+        log.warning(f"Groq vision parse failed: {e}")
         return None
