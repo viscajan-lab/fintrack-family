@@ -1,7 +1,7 @@
 """
 NLP Parser — parse input natural language ke transaksi terstruktur
 Tier 1: Regex (cepat, gratis)
-Tier 2: OpenAI GPT-4o-mini (fallback untuk input ambigu)
+Tier 2: Groq LLM — teks (llama-3.3-70b) & vision nota (llama-4-scout), fallback input ambigu
 """
 import re
 import json
