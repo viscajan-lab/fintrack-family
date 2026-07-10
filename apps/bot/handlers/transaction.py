@@ -7,7 +7,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from services.nlp_parser import parse_transaction
+from services.nlp_parser import parse_transaction, parse_receipt_image
 from services.supabase_service import SupabaseService
 
 router = Router()
@@ -81,6 +81,34 @@ def delete_keyboard(tx_id: str) -> InlineKeyboardMarkup:
     ]])
 
 
+def confirm_text(result: dict) -> str:
+    """Bangun teks konfirmasi transaksi (dipakai handler teks & nota)."""
+    icon = "📥" if result["type"] == "income" else "📤"
+    return (
+        f"{icon} *Konfirmasi Transaksi*\n\n"
+        f"Jenis      : {'Pemasukan' if result['type'] == 'income' else 'Pengeluaran'}\n"
+        f"Nominal    : *{format_idr(result['amount'])}*\n"
+        f"Keterangan : {result['description']}\n"
+        f"Kategori   : {result['category_name']}\n\n"
+        f"Simpan transaksi ini?"
+    )
+
+
+async def _stage_draft(result: dict, member: dict, message: Message, state: FSMContext) -> None:
+    """Simpan draft ke FSM + kirim kartu konfirmasi. Dipakai teks & nota."""
+    await state.update_data(draft={
+        **result,
+        "tenant_id":   member["tenant_id"],
+        "recorded_by": member.get("user_id"),
+    })
+    await state.set_state(TransactionStates.confirming)
+    await message.answer(
+        confirm_text(result),
+        parse_mode="Markdown",
+        reply_markup=confirm_keyboard("draft"),
+    )
+
+
 # ── Tangkap pesan teks yang bukan command ─────────────────────────────────────
 @router.message(F.text & ~F.text.startswith("/"))
 async def handle_text_input(message: Message, state: FSMContext) -> None:
@@ -108,24 +136,43 @@ async def handle_text_input(message: Message, state: FSMContext) -> None:
         )
         return
 
-    await state.update_data(draft={
-        **result,
-        "tenant_id":   member["tenant_id"],
-        "recorded_by": member.get("user_id"),
-    })
-    await state.set_state(TransactionStates.confirming)
+    await _stage_draft(result, member, message, state)
 
-    icon = "📥" if result["type"] == "income" else "📤"
-    await message.answer(
-        f"{icon} *Konfirmasi Transaksi*\n\n"
-        f"Jenis      : {'Pemasukan' if result['type'] == 'income' else 'Pengeluaran'}\n"
-        f"Nominal    : *{format_idr(result['amount'])}*\n"
-        f"Keterangan : {result['description']}\n"
-        f"Kategori   : {result['category_name']}\n\n"
-        f"Simpan transaksi ini?",
-        parse_mode="Markdown",
-        reply_markup=confirm_keyboard("draft"),
-    )
+
+# ── Tangkap foto nota/struk → OCR vision ──────────────────────────────────────
+@router.message(F.photo)
+async def handle_receipt_photo(message: Message, state: FSMContext) -> None:
+    tg_id = message.from_user.id  # type: ignore[union-attr]
+
+    # Jangan ganggu kalau ada FSM state aktif (setup keluarga, dll)
+    if await state.get_state() is not None:
+        return
+
+    member = await db.get_member_by_telegram_id(tg_id)
+    if not member:
+        await message.answer("❗ Kamu belum terdaftar. Ketik /start untuk setup dulu ya!")
+        return
+
+    thinking = await message.answer("🧾 Lagi baca notanya, tunggu sebentar ya...")
+
+    # Ambil foto resolusi tertinggi (photo[-1]) → download ke memory
+    from io import BytesIO
+    photo = message.photo[-1]  # type: ignore[index]
+    buf = BytesIO()
+    await message.bot.download(photo, destination=buf)  # type: ignore[union-attr]
+
+    result = await parse_receipt_image(buf.getvalue())
+    if not result:
+        await thinking.edit_text(
+            "🤔 Aku tidak bisa membaca nota ini.\n\n"
+            "Pastikan fotonya jelas & seluruh struk terlihat, atau catat manual:\n"
+            "• `Belanja 150rb`",
+            parse_mode="Markdown",
+        )
+        return
+
+    await thinking.delete()
+    await _stage_draft(result, member, message, state)
 
 
 # ── Callback: Simpan ──────────────────────────────────────────────────────────

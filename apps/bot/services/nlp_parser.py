@@ -5,9 +5,17 @@ Tier 2: OpenAI GPT-4o-mini (fallback untuk input ambigu)
 """
 import re
 import json
+import base64
 import logging
 from os import getenv
 from typing import Optional
+
+# Daftar kategori valid — dipakai regex, OpenAI teks, & vision nota.
+VALID_CATEGORIES = [
+    "Makanan & Minuman", "Transportasi", "Rumah & Tagihan", "Belanja",
+    "Kesehatan", "Pendidikan", "Hiburan", "Gaji", "Usaha / Freelance",
+    "Transfer Masuk", "Lainnya",
+]
 
 log = logging.getLogger(__name__)
 
@@ -198,3 +206,65 @@ async def parse_transaction(text: str) -> Optional[dict]:
     if result:
         log.debug(f"Parsed via OpenAI: {result}")
     return result
+
+
+async def parse_receipt_image(image_bytes: bytes) -> Optional[dict]:
+    """
+    Baca foto nota/struk belanja pakai GPT-4o-mini vision.
+    Returns dict {type, amount, description, category_name, source} — sama
+    persis skema parse_transaction, biar reuse alur konfirmasi di handler.
+    None kalau tak ada API key, bukan nota, atau gagal parse.
+    """
+    api_key = getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=api_key)
+
+        b64 = base64.b64encode(image_bytes).decode()
+        prompt = f"""Kamu adalah pembaca nota/struk belanja Indonesia.
+Baca gambar dan kembalikan JSON saja (tanpa markdown):
+{{
+  "type": "expense",
+  "amount": integer TOTAL akhir yang dibayar dalam rupiah (grand total, bukan subtotal/item),
+  "description": string nama toko/merchant singkat (mis. "Indomaret", "Warung Padang"),
+  "category_name": salah satu dari {VALID_CATEGORIES}
+}}
+Aturan:
+- Ambil angka TOTAL/GRAND TOTAL, abaikan diskon per-item & subtotal.
+- Kalau gambar bukan nota/struk atau total tak terbaca, kembalikan null."""
+
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            }],
+            max_tokens=200,
+            temperature=0,
+        )
+
+        raw = (resp.choices[0].message.content or "").strip()
+        # Bersihkan fence markdown kalau model bandel
+        raw = re.sub(r"^```(?:json)?|```$", "", raw).strip()
+        if raw.lower() == "null" or not raw:
+            return None
+
+        data = json.loads(raw)
+        if not isinstance(data.get("amount"), int) or data["amount"] < 100:
+            return None
+        if data.get("category_name") not in VALID_CATEGORIES:
+            data["category_name"] = "Lainnya"
+        data["type"]   = "expense"
+        data["source"] = "bot"
+        return data
+
+    except Exception as e:
+        log.warning(f"OpenAI vision parse failed: {e}")
+        return None
