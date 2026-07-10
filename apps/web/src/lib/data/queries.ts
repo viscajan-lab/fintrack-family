@@ -684,3 +684,103 @@ export async function getCategories(): Promise<Category[]> {
   }))
 }
 
+// ─── Yearly trend (tren tahunan 12 bulan) ────────────────────────────────────
+
+export interface YearlyTrendData {
+  year: number
+  months: ChartPoint[]          // 12 titik: Jan..Des (income/expense per bulan)
+  totalIncome: number
+  totalExpense: number
+  totalSavings: number
+  avgMonthlyExpense: number     // rata-rata pengeluaran per bulan yang ada transaksinya
+  bestMonth: string | null      // bulan dgn tabungan tertinggi
+  worstMonth: string | null     // bulan dgn tabungan terendah (paling boros)
+}
+
+const MONTHS_ID = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Ags","Sep","Okt","Nov","Des"]
+
+// Daftar tahun yang punya transaksi (untuk year picker). Selalu sertakan tahun ini.
+export async function getAvailableYears(): Promise<number[]> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  const nowYear  = new Date().getFullYear()
+  if (!tenantId) return [nowYear]
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("transaction_date")
+    .eq("tenant_id", tenantId)
+    .order("transaction_date", { ascending: false })
+    .limit(2000)
+
+  const years = new Set<number>([nowYear])
+  for (const r of data ?? []) {
+    const y = Number(String(r.transaction_date).slice(0, 4))
+    if (!Number.isNaN(y)) years.add(y)
+  }
+  return Array.from(years).sort((a, b) => b - a)
+}
+
+export async function getYearlyTrend(year: number): Promise<YearlyTrendData> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+
+  const empty: YearlyTrendData = {
+    year,
+    months: MONTHS_ID.map((name) => ({ name, income: 0, expense: 0 })),
+    totalIncome: 0, totalExpense: 0, totalSavings: 0,
+    avgMonthlyExpense: 0, bestMonth: null, worstMonth: null,
+  }
+  if (!tenantId) return empty
+
+  const from = `${year}-01-01`
+  const to   = `${year + 1}-01-01`
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("type, amount, transaction_date")
+    .eq("tenant_id", tenantId)
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
+
+  const rows = data ?? []
+
+  const months: ChartPoint[] = MONTHS_ID.map((name) => ({ name, income: 0, expense: 0 }))
+  for (const r of rows) {
+    const m = Number(String(r.transaction_date).slice(5, 7)) - 1  // 0-indexed
+    if (m < 0 || m > 11) continue
+    if (r.type === "income")  months[m].income  += r.amount
+    else if (r.type === "expense") months[m].expense += r.amount
+  }
+
+  const totalIncome  = months.reduce((s, m) => s + m.income, 0)
+  const totalExpense = months.reduce((s, m) => s + m.expense, 0)
+
+  const monthsWithActivity = months.filter((m) => m.income > 0 || m.expense > 0)
+  const avgMonthlyExpense  = monthsWithActivity.length
+    ? Math.round(totalExpense / monthsWithActivity.length)
+    : 0
+
+  let bestMonth: string | null = null
+  let worstMonth: string | null = null
+  if (monthsWithActivity.length) {
+    let bestVal = -Infinity, worstVal = Infinity
+    for (const m of monthsWithActivity) {
+      const savings = m.income - m.expense
+      if (savings > bestVal)  { bestVal = savings;  bestMonth  = m.name }
+      if (savings < worstVal) { worstVal = savings; worstMonth = m.name }
+    }
+  }
+
+  return {
+    year,
+    months,
+    totalIncome,
+    totalExpense,
+    totalSavings: totalIncome - totalExpense,
+    avgMonthlyExpense,
+    bestMonth,
+    worstMonth,
+  }
+}
+
