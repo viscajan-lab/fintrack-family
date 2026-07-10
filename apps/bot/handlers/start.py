@@ -66,6 +66,52 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 
     # ── Deep-link invite: /start join_<tenant_id_with_underscores> ──
     payload = command.args or ""
+
+    # ── Undangan tertarget: /start inv_<token> (sekali-pakai + expiry + role) ──
+    if payload.startswith("inv_"):
+        token = payload[4:]
+        existing = await db.get_member_by_telegram_id(tg_id)
+        if existing:
+            await message.answer(
+                "ℹ️ Kamu sudah terdaftar di sebuah workspace keluarga.",
+                parse_mode="Markdown"
+            )
+            return
+        invite = await db.get_invite_by_token(token)
+        if not invite:
+            await message.answer("❌ Undangan tidak valid atau sudah dipakai.")
+            return
+        # Cek kedaluwarsa (expires_at disimpan ISO UTC)
+        from datetime import datetime, timezone
+        try:
+            exp = datetime.fromisoformat(invite["expires_at"].replace("Z", "+00:00"))
+            if exp < datetime.now(timezone.utc):
+                await message.answer("❌ Undangan sudah kedaluwarsa. Minta admin buat undangan baru ya.")
+                return
+        except (ValueError, KeyError, AttributeError):
+            await message.answer("❌ Undangan tidak valid.")
+            return
+        tenant = await db.get_tenant(invite["tenant_id"])
+        if not tenant:
+            await message.answer("❌ Workspace tujuan undangan tidak ditemukan.")
+            return
+        role = "admin" if invite.get("role") == "admin" else "member"
+        await db.create_member(
+            tenant_id=invite["tenant_id"],
+            telegram_id=tg_id,
+            display_name=name,
+            role=role,
+        )
+        await db.mark_invite_used(invite["id"], tg_id)
+        role_label = "admin" if role == "admin" else "anggota"
+        await message.answer(
+            f"✅ Berhasil bergabung ke workspace *{tenant['name']}* sebagai *{role_label}*!\n\n"
+            f"Sekarang kamu bisa mulai catat transaksi.\n"
+            f"Ketik /help untuk panduan.",
+            parse_mode="Markdown"
+        )
+        return
+
     if payload.startswith("join_"):
         tenant_id = payload[5:].replace("_", "-")
         existing  = await db.get_member_by_telegram_id(tg_id)

@@ -514,3 +514,33 @@ class SupabaseService:
             .is_("claimed_at", "null")
             .execute()
         )
+
+    # ── Undangan tertarget (invites) ──────────────────────────────────────────
+
+    async def get_invite_by_token(self, token: str) -> Optional[dict]:
+        """Ambil undangan aktif (belum dipakai) berdasarkan token. Cek expiry di caller."""
+        sb = _get_client()
+        try:
+            res = await asyncio.to_thread(
+                lambda: sb.table("invites")
+                .select("*")
+                .eq("token", token)
+                .is_("used_at", "null")
+                .maybe_single()
+                .execute()
+            )
+            return res.data if res else None
+        except Exception:
+            return None
+
+    async def mark_invite_used(self, invite_id: str, telegram_id: int) -> None:
+        """Tandai undangan terpakai (set used_at = now, used_by_telegram_id)."""
+        from datetime import datetime, timezone
+        sb  = _get_client()
+        now = datetime.now(timezone.utc).isoformat()
+        await asyncio.to_thread(
+            lambda: sb.table("invites")
+            .update({"used_at": now, "used_by_telegram_id": telegram_id})
+            .eq("id", invite_id)
+            .execute()
+        )

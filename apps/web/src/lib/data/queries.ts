@@ -85,12 +85,23 @@ export interface Member {
   linked: boolean         // sudah punya akun web (user_id terisi)
 }
 
+export interface InviteRow {
+  id: string
+  token: string
+  role: "admin" | "member"
+  label: string | null
+  link: string | null     // deep-link Telegram siap pakai (null jika env bot kosong)
+  expires_at: string
+  expired: boolean         // sudah lewat expires_at
+}
+
 export interface MembersData {
   familyName: string
   tenantId: string
   members: Member[]
   isAdmin: boolean        // user login = admin (boleh lihat link undangan)
   inviteLink: string | null
+  invites: InviteRow[]    // undangan tertarget aktif (admin only)
 }
 
 export interface SavingsGoal {
@@ -603,12 +614,35 @@ export async function getMembers(): Promise<MembersData | null> {
       ? `https://t.me/${botUser}?start=join_${tenantId.replace(/-/g, "_")}`
       : null
 
+  // Undangan tertarget aktif (belum dipakai) — admin only.
+  let invites: InviteRow[] = []
+  if (isAdmin) {
+    const { data: invRows } = await supabase
+      .from("invites")
+      .select("id, token, role, label, expires_at, used_at")
+      .eq("tenant_id", tenantId)
+      .is("used_at", null)
+      .order("created_at", { ascending: false })
+
+    const now = Date.now()
+    invites = (invRows ?? []).map((r) => ({
+      id: r.id,
+      token: r.token,
+      role: r.role === "admin" ? "admin" : "member",
+      label: r.label ?? null,
+      link: botUser ? `https://t.me/${botUser}?start=inv_${r.token}` : null,
+      expires_at: r.expires_at,
+      expired: new Date(r.expires_at).getTime() < now,
+    }))
+  }
+
   return {
     familyName: tenant?.name ?? "Keluarga",
     tenantId,
     members,
     isAdmin,
     inviteLink,
+    invites,
   }
 }
 
