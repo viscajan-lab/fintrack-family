@@ -137,7 +137,7 @@ async def _do_setor(message: Message, goal: dict, amount: int) -> None:
     remaining = max(target - saved, 0)
 
     msg = [
-        f"✅ *Setoran tercatat!*\n",
+        "✅ *Setoran tercatat!*\n",
         f"Target : *{updated['name']}*",
         f"Setor  : *{format_idr(amount)}*",
         f"{progress_bar(saved, target)}",
