@@ -67,12 +67,17 @@ def build_budget_warning(status: dict, just_added: int) -> str | None:
     return None
 
 
-def confirm_keyboard(tx_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✅ Simpan",  callback_data=f"tx_save:{tx_id}"),
-        InlineKeyboardButton(text="✏️ Edit",    callback_data=f"tx_edit:{tx_id}"),
-        InlineKeyboardButton(text="❌ Batal",   callback_data=f"tx_cancel:{tx_id}"),
-    ]])
+def confirm_keyboard(tx_id: str, tx_type: str = "expense") -> InlineKeyboardMarkup:
+    # Tombol toggle: tunjukkan arah GANTI, bukan tipe saat ini (biar jelas 1-tap mau ke apa).
+    toggle = "🔄 Jadikan Pemasukan 📥" if tx_type == "expense" else "🔄 Jadikan Pengeluaran 📤"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=toggle, callback_data=f"tx_type:{tx_id}")],
+        [
+            InlineKeyboardButton(text="✅ Simpan",  callback_data=f"tx_save:{tx_id}"),
+            InlineKeyboardButton(text="✏️ Edit",    callback_data=f"tx_edit:{tx_id}"),
+            InlineKeyboardButton(text="❌ Batal",   callback_data=f"tx_cancel:{tx_id}"),
+        ],
+    ])
 
 
 def delete_keyboard(tx_id: str) -> InlineKeyboardMarkup:
@@ -105,7 +110,7 @@ async def _stage_draft(result: dict, member: dict, message: Message, state: FSMC
     await message.answer(
         confirm_text(result),
         parse_mode="Markdown",
-        reply_markup=confirm_keyboard("draft"),
+        reply_markup=confirm_keyboard("draft", result["type"]),
     )
 
 
@@ -226,6 +231,30 @@ async def cb_save(callback: CallbackQuery, state: FSMContext) -> None:
         except Exception as e:  # noqa: BLE001
             import logging
             logging.getLogger(__name__).warning("Budget check gagal (diabaikan): %s", e)
+
+
+# ── Callback: Toggle Pemasukan ⇄ Pengeluaran ─────────────────────────────────
+@router.callback_query(F.data.startswith("tx_type:"))
+async def cb_toggle_type(callback: CallbackQuery, state: FSMContext) -> None:
+    data  = await state.get_data()
+    draft = data.get("draft")
+    if not draft:
+        await callback.answer("Session expired, coba input lagi.")
+        await state.clear()
+        return
+
+    draft["type"] = "income" if draft["type"] == "expense" else "expense"
+    await state.update_data(draft=draft)
+
+    if callback.message:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            confirm_text(draft),
+            parse_mode="Markdown",
+            reply_markup=confirm_keyboard("draft", draft["type"]),
+        )
+    await callback.answer(
+        "📥 Diubah jadi Pemasukan" if draft["type"] == "income" else "📤 Diubah jadi Pengeluaran"
+    )
 
 
 # ── Callback: Batal ───────────────────────────────────────────────────────────
