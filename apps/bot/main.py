@@ -14,6 +14,7 @@ from handlers.start import router as start_router
 from handlers.transaction import router as transaction_router
 from handlers.recap import router as recap_router
 from handlers.budget import router as budget_router
+from handlers.savings import router as savings_router
 from handlers.recurring import router as recurring_router
 from handlers.insight import router as insight_router
 from handlers.anggota import router as anggota_router
@@ -42,6 +43,7 @@ async def main() -> None:
     # handle_text_input milik transaction_router.
     dp.include_router(start_router)
     dp.include_router(recurring_router)
+    dp.include_router(savings_router)
     dp.include_router(transaction_router)
     dp.include_router(recap_router)
     dp.include_router(budget_router)
@@ -58,6 +60,9 @@ async def main() -> None:
         BotCommand(command="rekap_bulan",  description="Rekap bulan ini"),
         BotCommand(command="budget",       description="Cek sisa budget kategori"),
         BotCommand(command="set_budget",   description="Set / ubah budget kategori"),
+        BotCommand(command="tabungan",     description="Lihat target tabungan & progres"),
+        BotCommand(command="nabung",       description="Setor ke target tabungan"),
+        BotCommand(command="target_baru",  description="Buat target tabungan baru"),
         BotCommand(command="insight",      description="Analitik: bulan ini vs bulan lalu"),
         BotCommand(command="recurring",    description="Daftar tagihan & langganan berulang"),
         BotCommand(command="add_recurring", description="Tambah tagihan berulang"),

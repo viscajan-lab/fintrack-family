@@ -544,3 +544,76 @@ class SupabaseService:
             .eq("id", invite_id)
             .execute()
         )
+
+    # ── Target Tabungan (savings_goals) ───────────────────────────────────────
+
+    async def get_savings_goals(self, tenant_id: str) -> list[dict]:
+        """Ambil semua target tabungan tenant, terbaru dulu."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("savings_goals")
+            .select("id, name, target_amount, saved_amount, deadline, note, achieved_at")
+            .eq("tenant_id", tenant_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return res.data or []
+
+    async def get_savings_goal_by_name(self, tenant_id: str, name: str) -> Optional[dict]:
+        """Cari 1 target tabungan by nama (case-insensitive, cocok persis/prefix)."""
+        goals = await self.get_savings_goals(tenant_id)
+        raw = name.strip().lower()
+        if not raw:
+            return None
+        for g in goals:
+            if (g.get("name") or "").strip().lower() == raw:
+                return g
+        hits = [g for g in goals if (g.get("name") or "").strip().lower().startswith(raw)]
+        if len(hits) == 1:
+            return hits[0]
+        hits = [g for g in goals if raw in (g.get("name") or "").strip().lower()]
+        if len(hits) == 1:
+            return hits[0]
+        return None
+
+    async def create_savings_goal(
+        self, tenant_id: str, name: str, target_amount: int,
+        deadline: Optional[str] = None, note: Optional[str] = None,
+    ) -> dict:
+        """Buat target tabungan baru. deadline format 'YYYY-MM-DD' atau None."""
+        sb  = _get_client()
+        row = {
+            "tenant_id": tenant_id,
+            "name": name,
+            "target_amount": target_amount,
+            "saved_amount": 0,
+        }
+        if deadline:
+            row["deadline"] = deadline
+        if note:
+            row["note"] = note
+        res = await asyncio.to_thread(
+            lambda: sb.table("savings_goals").insert(row).execute()
+        )
+        return res.data[0]
+
+    async def add_savings_contribution(self, goal: dict, amount: int) -> dict:
+        """Tambah setoran ke target: saved_amount += amount, set achieved_at bila tercapai."""
+        from datetime import datetime, timezone
+        sb        = _get_client()
+        new_saved = (goal.get("saved_amount") or 0) + amount
+        target    = goal.get("target_amount") or 0
+        patch     = {
+            "saved_amount": new_saved,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Set achieved_at pertama kali target tercapai (dan belum pernah ditandai)
+        if target > 0 and new_saved >= target and not goal.get("achieved_at"):
+            patch["achieved_at"] = datetime.now(timezone.utc).isoformat()
+        res = await asyncio.to_thread(
+            lambda: sb.table("savings_goals")
+            .update(patch)
+            .eq("id", goal["id"])
+            .execute()
+        )
+        return res.data[0]

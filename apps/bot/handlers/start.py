@@ -51,6 +51,9 @@ Cukup kirim pesan natural, contoh:
 /rekap — Rekap hari ini
 /rekap\\_bulan — Rekap bulan ini
 /budget — Cek sisa budget
+/tabungan — Target tabungan & progres
+/nabung — Setor ke target tabungan
+/target\\_baru — Buat target tabungan baru
 /anggota — Kelola anggota keluarga
 /help — Bantuan ini
 
