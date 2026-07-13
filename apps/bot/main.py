@@ -17,6 +17,7 @@ from handlers.budget import router as budget_router
 from handlers.savings import router as savings_router
 from handlers.recurring import router as recurring_router
 from handlers.insight import router as insight_router
+from handlers.trend import router as trend_router
 from handlers.anggota import router as anggota_router
 from handlers.reminder import router as reminder_router
 from handlers.link import router as link_router
@@ -48,6 +49,7 @@ async def main() -> None:
     dp.include_router(recap_router)
     dp.include_router(budget_router)
     dp.include_router(insight_router)
+    dp.include_router(trend_router)
     dp.include_router(anggota_router)
     dp.include_router(reminder_router)
     dp.include_router(link_router)
@@ -64,6 +66,7 @@ async def main() -> None:
         BotCommand(command="nabung",       description="Setor ke target tabungan"),
         BotCommand(command="target_baru",  description="Buat target tabungan baru"),
         BotCommand(command="insight",      description="Analitik: bulan ini vs bulan lalu"),
+        BotCommand(command="tren",         description="Tren tahunan: 12 bulan penuh"),
         BotCommand(command="recurring",    description="Daftar tagihan & langganan berulang"),
         BotCommand(command="add_recurring", description="Tambah tagihan berulang"),
         BotCommand(command="anggota",      description="Kelola anggota keluarga"),

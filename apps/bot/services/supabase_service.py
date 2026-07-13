@@ -617,3 +617,89 @@ class SupabaseService:
             .execute()
         )
         return res.data[0]
+
+    # ── Tren Tahunan (yearly trend) ──────────────────────────────────
+    async def get_available_years(self, tenant_id: str) -> list[int]:
+        """
+        Daftar tahun yang punya transaksi (untuk pemilih tahun /tren).
+        Selalu sertakan tahun berjalan. Urut desc (terbaru dulu).
+        Port 1:1 dari web getAvailableYears().
+        """
+        now_year = date.today().year
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("transactions")
+            .select("transaction_date")
+            .eq("tenant_id", tenant_id)
+            .order("transaction_date", desc=True)
+            .limit(2000)
+            .execute()
+        )
+        years = {now_year}
+        for r in res.data or []:
+            raw = str(r.get("transaction_date") or "")[:4]
+            if raw.isdigit():
+                years.add(int(raw))
+        return sorted(years, reverse=True)
+
+    async def get_yearly_trend(self, tenant_id: str, year: int) -> dict:
+        """
+        Ringkasan arus kas 1 tahun penuh (12 bulan) untuk /tren.
+        Port 1:1 dari web getYearlyTrend().
+
+        Return dict:
+          year, months[list of {name, income, expense}],
+          total_income, total_expense, total_savings,
+          avg_monthly_expense, best_month, worst_month
+        """
+        month_names = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+                       "Jul", "Ags", "Sep", "Okt", "Nov", "Des"]
+        months = [{"name": n, "income": 0, "expense": 0} for n in month_names]
+
+        sb   = _get_client()
+        frm  = f"{year}-01-01"
+        to   = f"{year + 1}-01-01"
+        res  = await asyncio.to_thread(
+            lambda: sb.table("transactions")
+            .select("type, amount, transaction_date")
+            .eq("tenant_id", tenant_id)
+            .gte("transaction_date", frm)
+            .lt("transaction_date", to)
+            .execute()
+        )
+        for r in res.data or []:
+            m = int(str(r.get("transaction_date") or "0000-00")[5:7]) - 1  # 0-indexed
+            if m < 0 or m > 11:
+                continue
+            amt = int(r.get("amount") or 0)
+            if r.get("type") == "income":
+                months[m]["income"] += amt
+            elif r.get("type") == "expense":
+                months[m]["expense"] += amt
+
+        total_income  = sum(m["income"] for m in months)
+        total_expense = sum(m["expense"] for m in months)
+
+        active = [m for m in months if m["income"] > 0 or m["expense"] > 0]
+        avg_monthly_expense = round(total_expense / len(active)) if active else 0
+
+        best_month = worst_month = None
+        if active:
+            best_val, worst_val = float("-inf"), float("inf")
+            for m in active:
+                savings = m["income"] - m["expense"]
+                if savings > best_val:
+                    best_val, best_month = savings, m["name"]
+                if savings < worst_val:
+                    worst_val, worst_month = savings, m["name"]
+
+        return {
+            "year": year,
+            "months": months,
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "total_savings": total_income - total_expense,
+            "avg_monthly_expense": avg_monthly_expense,
+            "best_month": best_month,
+            "worst_month": worst_month,
+        }

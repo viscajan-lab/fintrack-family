@@ -55,6 +55,8 @@ Cukup kirim pesan natural, contoh:
 /nabung — Setor ke target tabungan
 /target\\_baru — Buat target tabungan baru
 /anggota — Kelola anggota keluarga
+/insight — Analitik bulan ini vs bulan lalu
+/tren — Tren tahunan (12 bulan)
 /help — Bantuan ini
 
 *Tips:*
