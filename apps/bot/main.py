@@ -57,8 +57,20 @@ async def main() -> None:
     dp.include_router(group_channel_router)
 
     # Set bot commands (menu burger di Telegram)
-    from aiogram.types import BotCommand
-    await bot.set_my_commands([
+    #
+    # PENTING: menu burger di dalam GRUP diambil Telegram dari scope
+    # BotCommandScopeAllGroupChats, BUKAN dari default scope (yang hanya
+    # tampil di chat pribadi). Karena /hubungkan_grup, /lepas_grup, dan
+    # /status_grup hanya berfungsi di dalam grup, command tsb HARUS
+    # didaftarkan ke scope grup agar muncul di menu burger grup.
+    from aiogram.types import (
+        BotCommand,
+        BotCommandScopeAllPrivateChats,
+        BotCommandScopeAllGroupChats,
+    )
+
+    # Command untuk chat pribadi (DM) — full menu personal.
+    private_commands = [
         BotCommand(command="start",        description="Mulai / kembali ke menu utama"),
         BotCommand(command="rekap",        description="Rekap transaksi hari ini"),
         BotCommand(command="rekap_bulan",  description="Rekap bulan ini"),
@@ -76,7 +88,20 @@ async def main() -> None:
         BotCommand(command="hubungkan",     description="Sambungkan akun web ⇄ bot"),
         BotCommand(command="hubungkan_grup", description="Hubungkan grup keluarga (rekap harian)"),
         BotCommand(command="help",         description="Panduan penggunaan bot"),
-    ])
+    ]
+
+    # Command untuk di dalam GRUP — hanya command yang relevan di grup.
+    group_commands = [
+        BotCommand(command="hubungkan_grup", description="Hubungkan grup keluarga (rekap harian)"),
+        BotCommand(command="lepas_grup",     description="Lepaskan grup dari workspace keluarga"),
+        BotCommand(command="status_grup",    description="Cek status koneksi grup ↔ workspace"),
+        BotCommand(command="rekap",          description="Rekap transaksi hari ini"),
+        BotCommand(command="rekap_bulan",    description="Rekap bulan ini"),
+        BotCommand(command="help",           description="Panduan penggunaan bot"),
+    ]
+
+    await bot.set_my_commands(private_commands, scope=BotCommandScopeAllPrivateChats())
+    await bot.set_my_commands(group_commands,   scope=BotCommandScopeAllGroupChats())
 
     log.info("🤖 FinTrack Bot starting...")
     await bot.delete_webhook(drop_pending_updates=True)
