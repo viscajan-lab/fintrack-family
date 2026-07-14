@@ -1,8 +1,8 @@
 """
 Handler: /start — registrasi user & setup tenant (workspace keluarga)
 """
-from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import Router
+from aiogram.types import Message
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -117,12 +117,23 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         )
         return
 
-    if payload.startswith("join_"):
-        tenant_id = payload[5:].replace("_", "-")
-        existing  = await db.get_member_by_telegram_id(tg_id)
+    if payload.startswith("join"):
+        raw = payload[4:]
+        # Format BARU: hex 32 char murni (kebal Markdown) → rekonstruksi UUID.
+        # Format LAMA (link legacy): "_<uuid dgn '-' diganti '_'>".
+        if raw.startswith("_"):
+            tenant_id = raw[1:].replace("_", "-")
+        else:
+            h = raw.replace("_", "").replace("-", "")
+            if len(h) == 32:
+                tenant_id = f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+            else:
+                tenant_id = raw.replace("_", "-")
+
+        existing = await db.get_member_by_telegram_id(tg_id)
         if existing:
             await message.answer(
-                f"ℹ️ Kamu sudah terdaftar di workspace keluarga ini.",
+                "ℹ️ Kamu sudah terdaftar di workspace keluarga ini.",
                 parse_mode="Markdown"
             )
             return
@@ -137,8 +148,8 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
             role="member",
         )
         await message.answer(
-            f"✅ Berhasil bergabung ke workspace *{tenant['name']}*!\\n\\n"
-            f"Sekarang kamu bisa mulai catat transaksi.\\n"
+            f"✅ Berhasil bergabung ke workspace *{tenant['name']}*!\n\n"
+            f"Sekarang kamu bisa mulai catat transaksi.\n"
             f"Ketik /help untuk panduan.",
             parse_mode="Markdown"
         )

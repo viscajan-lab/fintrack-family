@@ -57,14 +57,17 @@ async def cb_invite(callback: CallbackQuery, bot: Bot) -> None:
 
     me       = await bot.get_me()
     bot_name = me.username
-    # Encode tenant_id sbg deep-link payload (ganti - → _ karena Telegram tidak terima -)
-    payload  = f"join_{tenant_id.replace('-', '_')}"
+    # Encode tenant_id (UUID) sbg deep-link payload. Telegram start-param hanya
+    # menerima [A-Za-z0-9_]; kita buang tanda '-' → hex 32 char murni (tanpa
+    # underscore) supaya link KEBAL parse_mode Markdown (underscore = italic,
+    # bikin karakter hilang). Handler /start merekonstruksi UUID dari hex ini.
+    payload  = f"join{tenant_id.replace('-', '')}"
     link     = f"https://t.me/{bot_name}?start={payload}"
 
+    # Kirim TANPA parse_mode Markdown agar link (dan underscore apa pun) utuh.
     await callback.message.answer(
-        f"🔗 *Link Undangan*\n\n"
+        "🔗 Link Undangan\n\n"
         f"Bagikan link ini ke anggota keluarga:\n{link}\n\n"
-        f"_Link ini akan menambahkan mereka ke workspace kamu secara otomatis._",
-        parse_mode="Markdown",
+        "Link ini akan menambahkan mereka ke workspace kamu secara otomatis.",
     )
     await callback.answer()
