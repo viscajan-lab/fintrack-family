@@ -140,6 +140,54 @@ async def _process_reminders(bot: Bot, db: SupabaseService, hh: int, mm: int, to
     return sent
 
 
+# ── Tugas 3: broadcast rekap harian ke grup keluarga ─────────────────────────
+
+async def _process_group_recap(bot: Bot, db: SupabaseService, hour: int, today: date) -> int:
+    """Broadcast rekap harian ke grup tenant yang jadwalnya == `hour` WIB.
+    Anti-dobel: skip tenant yang group_last_recap == hari ini (WIB)."""
+    sent = 0
+    for tenant in await db.get_tenants_for_group_recap(hour):
+        if tenant.get("group_last_recap") == str(today):
+            continue
+        chat_id = tenant.get("group_chat_id")
+        if not chat_id:
+            continue
+        try:
+            summary  = await db.get_summary(tenant["id"], today, today)
+            income   = summary.get("total_income", 0)
+            expense  = summary.get("total_expense", 0)
+            txs      = summary.get("transactions", []) or []
+            net      = income - expense
+            net_str  = f"+{format_idr(net)}" if net >= 0 else f"-{format_idr(abs(net))}"
+
+            # Rincian pengeluaran per kategori (top 5)
+            by_cat: dict[str, int] = {}
+            for t in txs:
+                if t.get("type") == "expense":
+                    cat = t.get("category_name") or "Lainnya"
+                    by_cat[cat] = by_cat.get(cat, 0) + t["amount"]
+            top = sorted(by_cat.items(), key=lambda x: x[1], reverse=True)[:5]
+            rincian = "\n".join(f"   • {c}: {format_idr(a)}" for c, a in top) if top else "   • (belum ada pengeluaran)"
+
+            tgl = today.strftime("%d-%m-%Y")
+            await bot.send_message(
+                chat_id,
+                f"📊 <b>Rekap Keluarga — {tgl}</b>\n\n"
+                f"💰 Pemasukan  : {format_idr(income)}\n"
+                f"💸 Pengeluaran: {format_idr(expense)}\n"
+                f"📈 Selisih    : <b>{net_str}</b>\n"
+                f"🧾 Transaksi  : {len(txs)}\n\n"
+                f"<b>Pengeluaran terbesar:</b>\n{rincian}\n\n"
+                f"Detail lengkap ada di dashboard web. 💙",
+                parse_mode="HTML",
+            )
+            await db.mark_group_recap_sent(tenant["id"], today)
+            sent += 1
+        except Exception as e:
+            log.error("Gagal broadcast rekap grup tenant %s: %s", tenant.get("id"), e)
+    return sent
+
+
 # ── Loop utama: tick per menit, WIB-aware ────────────────────────────────────
 
 async def scheduler_loop(bot: Bot, db: SupabaseService) -> None:
@@ -161,6 +209,12 @@ async def scheduler_loop(bot: Bot, db: SupabaseService) -> None:
                 touched = await _process_recurring(bot, db, today)
                 last_recurring_date = str(today)
                 log.info("Recurring run %s WIB: %d rule diproses.", today, touched)
+
+            # Broadcast rekap grup: tiap menit 0, filter tenant yg group_recap_hour == jam ini
+            if now.minute == 0:
+                g = await _process_group_recap(bot, db, now.hour, today)
+                if g:
+                    log.info("Rekap grup terkirim: %d tenant (%02d:00 WIB).", g, now.hour)
 
             # Tidur sampai awal menit berikutnya (drift-free)
             await asyncio.sleep(max(1, 60 - now.second))

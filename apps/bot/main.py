@@ -21,6 +21,7 @@ from handlers.trend import router as trend_router
 from handlers.anggota import router as anggota_router
 from handlers.reminder import router as reminder_router
 from handlers.link import router as link_router
+from handlers.group_channel import router as group_channel_router
 
 from services.supabase_service import SupabaseService
 from services.scheduler import recurring_scheduler
@@ -53,6 +54,7 @@ async def main() -> None:
     dp.include_router(anggota_router)
     dp.include_router(reminder_router)
     dp.include_router(link_router)
+    dp.include_router(group_channel_router)
 
     # Set bot commands (menu burger di Telegram)
     from aiogram.types import BotCommand
@@ -72,6 +74,7 @@ async def main() -> None:
         BotCommand(command="anggota",      description="Kelola anggota keluarga"),
         BotCommand(command="reminder",     description="Atur pengingat harian catat pengeluaran"),
         BotCommand(command="hubungkan",     description="Sambungkan akun web ⇄ bot"),
+        BotCommand(command="hubungkan_grup", description="Hubungkan grup keluarga (rekap harian)"),
         BotCommand(command="help",         description="Panduan penggunaan bot"),
     ])
 

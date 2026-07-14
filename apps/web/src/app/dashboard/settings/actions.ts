@@ -141,3 +141,94 @@ export async function clearReminder(): Promise<{ ok: boolean; error?: string }> 
   revalidatePath("/dashboard/settings")
   return { ok: true }
 }
+
+// ── Grup keluarga (broadcast rekap harian ke grup Telegram) ───────────────────
+// Grup di-bind lewat bot (/hubungkan_grup di dalam grup). Web menampilkan status
+// koneksi + mengatur jadwal jam recap & on/off. Scheduler bot yang broadcast.
+
+export type GroupStatus = {
+  isAdmin: boolean          // user login = admin tenant?
+  connected: boolean        // group_chat_id terisi?
+  groupTitle: string | null
+  enabled: boolean          // group_daily_recap
+  hour: number              // group_recap_hour (0–23)
+}
+
+/** Ambil tenant + role member yang sedang login (prioritas member ber-telegram_id). */
+async function currentTenant(): Promise<
+  { tenantId: string; role: string | null; admin: ReturnType<typeof createAdminClient> } | null
+> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const admin = createAdminClient()
+  const { data: member } = await admin
+    .from("tenant_members")
+    .select("tenant_id, role")
+    .eq("user_id", user.id)
+    .order("telegram_id", { ascending: false, nullsFirst: false })
+    .order("joined_at",   { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (!member?.tenant_id) return null
+  return { tenantId: member.tenant_id, role: member.role ?? null, admin }
+}
+
+/** Status grup keluarga untuk tenant user yang sedang login. */
+export async function getGroupStatus(): Promise<GroupStatus> {
+  const ctx = await currentTenant()
+  if (!ctx) {
+    return { isAdmin: false, connected: false, groupTitle: null, enabled: false, hour: 21 }
+  }
+
+  const { data: tenant } = await ctx.admin
+    .from("tenants")
+    .select("group_chat_id, group_title, group_daily_recap, group_recap_hour")
+    .eq("id", ctx.tenantId)
+    .maybeSingle()
+
+  return {
+    isAdmin:    ctx.role === "admin",
+    connected:  tenant?.group_chat_id != null,
+    groupTitle: tenant?.group_title ?? null,
+    enabled:    tenant?.group_daily_recap ?? true,
+    hour:       tenant?.group_recap_hour ?? 21,
+  }
+}
+
+/** Atur recap grup: on/off + jam (WIB). Admin-only. Reset penanda anti-dobel. */
+export async function setGroupRecap(enabled: boolean, hour: number): Promise<{ ok: boolean; error?: string }> {
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    return { ok: false, error: "Jam tidak valid (0–23)." }
+  }
+  const ctx = await currentTenant()
+  if (!ctx) return { ok: false, error: "Sesi tidak valid." }
+  if (ctx.role !== "admin") return { ok: false, error: "Hanya admin keluarga yang bisa mengatur ini." }
+
+  const { error } = await ctx.admin
+    .from("tenants")
+    .update({ group_daily_recap: enabled, group_recap_hour: hour, group_last_recap: null })
+    .eq("id", ctx.tenantId)
+
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/dashboard/settings")
+  return { ok: true }
+}
+
+/** Lepas grup dari tenant (mirror bot /lepas_grup). Admin-only. */
+export async function unlinkGroup(): Promise<{ ok: boolean; error?: string }> {
+  const ctx = await currentTenant()
+  if (!ctx) return { ok: false, error: "Sesi tidak valid." }
+  if (ctx.role !== "admin") return { ok: false, error: "Hanya admin keluarga yang bisa melepas grup." }
+
+  const { error } = await ctx.admin
+    .from("tenants")
+    .update({ group_chat_id: null, group_title: null })
+    .eq("id", ctx.tenantId)
+
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/dashboard/settings")
+  return { ok: true }
+}

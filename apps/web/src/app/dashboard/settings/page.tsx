@@ -1,7 +1,8 @@
 import Link from "next/link"
 import { Mail, CheckCircle2, XCircle, Users, MessageCircle } from "lucide-react"
-import { getLinkStatus, getReminderStatus } from "./actions"
+import { getLinkStatus, getReminderStatus, getGroupStatus } from "./actions"
 import { ReminderCard } from "@/components/settings/ReminderCard"
+import { GroupCard } from "@/components/settings/GroupCard"
 
 export const dynamic = "force-dynamic"
 
@@ -13,6 +14,7 @@ function fmtDate(iso: string | null): string {
 export default async function SettingsPage() {
   const s = await getLinkStatus()
   const reminder = await getReminderStatus()
+  const group = await getGroupStatus()
 
   return (
     <div className="p-6 space-y-5 max-w-2xl">
@@ -78,6 +80,9 @@ export default async function SettingsPage() {
 
       {/* ── Pengingat Harian ──────────────────────────────── */}
       <ReminderCard status={reminder} />
+
+      {/* ── Grup Keluarga ─────────────────────────────────── */}
+      <GroupCard status={group} />
     </div>
   )
 }

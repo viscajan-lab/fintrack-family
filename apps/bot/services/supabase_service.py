@@ -53,6 +53,61 @@ class SupabaseService:
         )
         return res.data
 
+    # ── Grup keluarga (broadcast) ─────────────────────────────────────────────
+
+    async def get_tenant_by_group_chat(self, group_chat_id: int) -> Optional[dict]:
+        """Cari tenant yang sudah terikat ke chat_id grup ini (untuk cek dobel)."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("tenants").select("*")
+            .eq("group_chat_id", group_chat_id).maybe_single().execute()
+        )
+        return res.data if res else None
+
+    async def set_tenant_group_chat(
+        self, tenant_id: str, group_chat_id: int, group_title: Optional[str]
+    ) -> None:
+        """Ikat grup Telegram ke tenant (dipakai /hubungkan_grup)."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenants")
+            .update({"group_chat_id": group_chat_id, "group_title": group_title})
+            .eq("id", tenant_id)
+            .execute()
+        )
+
+    async def unset_tenant_group_chat(self, tenant_id: str) -> None:
+        """Lepas grup dari tenant (dipakai /lepas_grup)."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenants")
+            .update({"group_chat_id": None, "group_title": None})
+            .eq("id", tenant_id)
+            .execute()
+        )
+
+    async def get_tenants_for_group_recap(self, hour: int) -> list[dict]:
+        """Tenant yang punya grup terhubung, recap harian aktif, & jadwal jam == hour."""
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("tenants").select("*")
+            .not_.is_("group_chat_id", "null")
+            .eq("group_daily_recap", True)
+            .eq("group_recap_hour", hour)
+            .execute()
+        )
+        return res.data or []
+
+    async def mark_group_recap_sent(self, tenant_id: str, day: date) -> None:
+        """Tandai tanggal terakhir broadcast supaya tidak dobel di jam yang sama."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenants")
+            .update({"group_last_recap": str(day)})
+            .eq("id", tenant_id)
+            .execute()
+        )
+
     # ── Members ───────────────────────────────────────────────────────────────
 
     async def get_member_by_telegram_id(self, telegram_id: int) -> Optional[dict]:
