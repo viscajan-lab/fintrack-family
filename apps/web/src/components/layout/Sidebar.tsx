@@ -15,6 +15,7 @@ import {
   PiggyBank,
   Tags,
   LineChart,
+  History,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -30,6 +31,7 @@ const NAV = [
   { href: "/dashboard/reports",      label: "Laporan",    icon: Wallet },
   { href: "/dashboard/trends",       label: "Tren",       icon: LineChart },
   { href: "/dashboard/insight",      label: "Insight",    icon: Sparkles },
+  { href: "/dashboard/riwayat",      label: "Riwayat",    icon: History },
   { href: "/dashboard/members",      label: "Anggota",    icon: Users },
   { href: "/dashboard/link",         label: "Hubungkan",  icon: Link2 },
   { href: "/dashboard/settings",     label: "Pengaturan", icon: Settings },

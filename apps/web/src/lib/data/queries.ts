@@ -453,6 +453,59 @@ export async function getRecurringRules(): Promise<RecurringRule[]> {
   return (data ?? []) as RecurringRule[]
 }
 
+// ─── Audit log / riwayat aktivitas ────────────────────────────────────────────
+
+export type AuditLog = {
+  id: string
+  action: string
+  table_name: string
+  record_id: string | null
+  old_data: Record<string, unknown> | null
+  new_data: Record<string, unknown> | null
+  created_at: string
+  actor_name: string | null
+}
+
+export async function getAuditLogs(limit = 100): Promise<AuditLog[]> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return []
+
+  const { data } = await supabase
+    .from("audit_logs")
+    .select("id, user_id, action, table_name, record_id, old_data, new_data, created_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+
+  const rows = data ?? []
+
+  // Resolusi nama pelaku via tenant_members (best-effort).
+  const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))] as string[]
+  const nameMap = new Map<string, string>()
+  if (userIds.length > 0) {
+    const { data: members } = await supabase
+      .from("tenant_members")
+      .select("user_id, display_name")
+      .eq("tenant_id", tenantId)
+      .in("user_id", userIds)
+    for (const m of members ?? []) {
+      if (m.user_id && m.display_name) nameMap.set(m.user_id, m.display_name)
+    }
+  }
+
+  return rows.map((r) => ({
+    id:         r.id,
+    action:     r.action,
+    table_name: r.table_name,
+    record_id:  r.record_id,
+    old_data:   r.old_data,
+    new_data:   r.new_data,
+    created_at: r.created_at,
+    actor_name: r.user_id ? (nameMap.get(r.user_id) ?? null) : null,
+  })) as AuditLog[]
+}
+
 // ─── Insight / analitik (bulan ini vs bulan lalu) ─────────────────────────────
 // Mirror logika bot /insight: read-only dari tabel transactions, tanpa migrasi.
 

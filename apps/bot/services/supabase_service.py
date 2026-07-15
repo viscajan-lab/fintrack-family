@@ -206,6 +206,32 @@ class SupabaseService:
 
     # ── Transactions ──────────────────────────────────────────────────────────
 
+    async def _log_audit(
+        self,
+        action: str,
+        tenant_id: str | None,
+        record_id: str | None = None,
+        old_data: dict | None = None,
+        new_data: dict | None = None,
+        user_id: str | None = None,
+    ) -> None:
+        """Best-effort audit log — tidak boleh menggagalkan operasi utama."""
+        try:
+            sb = _get_client()
+            await asyncio.to_thread(
+                lambda: sb.table("audit_logs").insert({
+                    "tenant_id":  tenant_id,
+                    "user_id":    user_id,
+                    "action":     action,
+                    "table_name": "transactions",
+                    "record_id":  record_id,
+                    "old_data":   old_data,
+                    "new_data":   new_data,
+                }).execute()
+            )
+        except Exception:
+            pass
+
     async def create_transaction(self, data: dict) -> dict:
         sb      = _get_client()
         # Remove None values — recorded_by may be None for bot-created transactions
@@ -213,7 +239,15 @@ class SupabaseService:
         res     = await asyncio.to_thread(
             lambda: sb.table("transactions").insert(payload).execute()
         )
-        return res.data[0]
+        row = res.data[0]
+        await self._log_audit(
+            action="create_transaction",
+            tenant_id=row.get("tenant_id"),
+            record_id=row.get("id"),
+            new_data=row,
+            user_id=row.get("recorded_by"),
+        )
+        return row
 
     async def get_summary(
         self,
@@ -244,6 +278,17 @@ class SupabaseService:
         """Hapus transaksi — hanya milik tenant ybs."""
         sb = _get_client()
         try:
+            # Ambil data lama untuk audit (old_data) sebelum dihapus.
+            old_res = await asyncio.to_thread(
+                lambda: sb.table("transactions")
+                .select("*")
+                .eq("id", tx_id)
+                .eq("tenant_id", tenant_id)
+                .limit(1)
+                .execute()
+            )
+            old_row = old_res.data[0] if old_res.data else None
+
             res = await asyncio.to_thread(
                 lambda: sb.table("transactions")
                 .delete()
@@ -251,7 +296,16 @@ class SupabaseService:
                 .eq("tenant_id", tenant_id)
                 .execute()
             )
-            return bool(res.data)
+            ok = bool(res.data)
+            if ok:
+                await self._log_audit(
+                    action="delete_transaction",
+                    tenant_id=tenant_id,
+                    record_id=tx_id,
+                    old_data=old_row,
+                    user_id=(old_row or {}).get("recorded_by"),
+                )
+            return ok
         except Exception:
             return False
 

@@ -18,6 +18,34 @@ async function getTenantId() {
   return data?.tenant_id ?? null
 }
 
+// ─── Audit log helper (best-effort, tidak boleh menggagalkan aksi utama) ──────
+
+async function logAudit(params: {
+  action: string
+  record_id?: string | null
+  old_data?: unknown
+  new_data?: unknown
+}) {
+  try {
+    const supabase = await createClient()
+    const tenantId = await getTenantId()
+    if (!tenantId) return
+    const { data: { user } } = await supabase.auth.getUser()
+
+    await supabase.from("audit_logs").insert({
+      tenant_id:  tenantId,
+      user_id:    user?.id ?? null,
+      action:     params.action,
+      table_name: "transactions",
+      record_id:  params.record_id ?? null,
+      old_data:   params.old_data ?? null,
+      new_data:   params.new_data ?? null,
+    })
+  } catch {
+    // Audit tidak boleh bikin aksi utama gagal — telan error diam-diam.
+  }
+}
+
 // ─── Add Transaction ──────────────────────────────────────────────────────────
 
 export async function addTransaction(formData: FormData) {
@@ -38,7 +66,7 @@ export async function addTransaction(formData: FormData) {
     return { error: "Deskripsi, tipe, jumlah, dan tanggal wajib diisi" }
   }
 
-  const { error } = await supabase.from("transactions").insert({
+  const { data: inserted, error } = await supabase.from("transactions").insert({
     tenant_id:        tenantId,
     recorded_by:      user!.id,
     description,
@@ -48,9 +76,15 @@ export async function addTransaction(formData: FormData) {
     transaction_date: date,
     category_name:    category_name || null,
     notes:            notes || null,
-  })
+  }).select().single()
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    action:    "create_transaction",
+    record_id: inserted?.id,
+    new_data:  inserted,
+  })
 
   revalidatePath("/dashboard")
   revalidatePath("/dashboard/transactions")
@@ -113,20 +147,39 @@ export async function updateTransaction(id: string, formData: FormData) {
     return { error: "Deskripsi, tipe, jumlah, dan tanggal wajib diisi" }
   }
 
-  const { error } = await supabase
+  // Ambil data lama untuk audit (old_data) sebelum di-update.
+  const { data: oldRow } = await supabase
     .from("transactions")
-    .update({
-      description,
-      type,
-      amount,
-      transaction_date: date,
-      category_name: category_name || null,
-      notes:         notes || null,
-    })
+    .select("*")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  const newValues = {
+    description,
+    type,
+    amount,
+    transaction_date: date,
+    category_name: category_name || null,
+    notes:         notes || null,
+  }
+
+  const { data: updated, error } = await supabase
+    .from("transactions")
+    .update(newValues)
     .eq("id", id)
     .eq("tenant_id", tenantId)   // RLS safety belt
+    .select()
+    .maybeSingle()
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    action:    "update_transaction",
+    record_id: id,
+    old_data:  oldRow,
+    new_data:  updated,
+  })
 
   revalidatePath("/dashboard")
   revalidatePath("/dashboard/transactions")
@@ -243,6 +296,14 @@ export async function deleteTransaction(id: string) {
   const tenantId = await getTenantId()
   if (!tenantId) return { error: "Tidak terautentikasi" }
 
+  // Ambil data lama untuk audit (old_data) sebelum dihapus.
+  const { data: oldRow } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
   const { error } = await supabase
     .from("transactions")
     .delete()
@@ -250,6 +311,12 @@ export async function deleteTransaction(id: string) {
     .eq("tenant_id", tenantId)   // RLS safety belt
 
   if (error) return { error: error.message }
+
+  await logAudit({
+    action:    "delete_transaction",
+    record_id: id,
+    old_data:  oldRow,
+  })
 
   revalidatePath("/dashboard")
   revalidatePath("/dashboard/transactions")

@@ -4,6 +4,7 @@ Contoh: "Makan siang 35000", "Bensin 50rb", "Gaji Juli 8.5jt"
 """
 from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
@@ -16,6 +17,7 @@ db = SupabaseService()
 
 class TransactionStates(StatesGroup):
     confirming = State()
+    editing    = State()
 
 
 def format_idr(amount: int) -> str:
@@ -254,6 +256,88 @@ async def cb_toggle_type(callback: CallbackQuery, state: FSMContext) -> None:
         )
     await callback.answer(
         "📥 Diubah jadi Pemasukan" if draft["type"] == "income" else "📤 Diubah jadi Pengeluaran"
+    )
+
+
+# ── Callback: Edit draft (ketik ulang) ───────────────────────────────────────
+@router.callback_query(F.data.startswith("tx_edit:"))
+async def cb_edit(callback: CallbackQuery, state: FSMContext) -> None:
+    """
+    User menekan ✏️ Edit di kartu konfirmasi DRAFT (sebelum disimpan).
+    Bot minta user ketik ulang transaksinya → di-parse ulang → draft di-refresh
+    → kartu konfirmasi tampil lagi. Reuse parse_transaction + _stage_draft.
+    """
+    data  = await state.get_data()
+    draft = data.get("draft")
+    if not draft:
+        await callback.answer("Sesi habis, coba input lagi.")
+        await state.clear()
+        return
+
+    await state.set_state(TransactionStates.editing)
+    if callback.message:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "✏️ *Edit Transaksi*\n\n"
+            "Ketik ulang transaksinya ya, contoh:\n"
+            "• `Makan siang 40rb`\n"
+            "• `Bensin 60rb`\n\n"
+            "_Ketik /batal untuk membatalkan edit._",
+            parse_mode="Markdown",
+        )
+    await callback.answer("Ketik ulang transaksinya 👇")
+
+
+@router.message(Command("batal"), StateFilter(TransactionStates.editing))
+async def cancel_edit(message: Message, state: FSMContext) -> None:
+    """Batalkan edit → kembalikan kartu konfirmasi dari draft yang tersimpan."""
+    data  = await state.get_data()
+    draft = data.get("draft")
+    if not draft:
+        await state.clear()
+        await message.answer("❌ Edit dibatalkan.")
+        return
+    await state.set_state(TransactionStates.confirming)
+    await message.answer(
+        confirm_text(draft),
+        parse_mode="Markdown",
+        reply_markup=confirm_keyboard("draft", draft["type"]),
+    )
+
+
+@router.message(StateFilter(TransactionStates.editing), F.text)
+async def edit_got_text(message: Message, state: FSMContext) -> None:
+    """Terima input baru saat mode edit → parse ulang → refresh draft + kartu."""
+    text   = (message.text or "").strip()
+    data   = await state.get_data()
+    draft  = data.get("draft")
+    if not draft:
+        await state.clear()
+        await message.answer("Sesi habis, coba input lagi ya.")
+        return
+
+    result = await parse_transaction(text)
+    if not result:
+        await message.answer(
+            "🤔 Aku belum paham input barunya.\n\n"
+            "Coba format seperti:\n"
+            "• `Makan siang 35000`\n"
+            "• `Bensin 50rb`\n\n"
+            "_Atau /batal untuk kembali ke draft sebelumnya._",
+            parse_mode="Markdown",
+        )
+        return
+
+    # Refresh draft: pakai hasil parse baru + pertahankan tenant/recorded_by.
+    await state.update_data(draft={
+        **result,
+        "tenant_id":   draft["tenant_id"],
+        "recorded_by": draft.get("recorded_by"),
+    })
+    await state.set_state(TransactionStates.confirming)
+    await message.answer(
+        confirm_text(result),
+        parse_mode="Markdown",
+        reply_markup=confirm_keyboard("draft", result["type"]),
     )
 
 
