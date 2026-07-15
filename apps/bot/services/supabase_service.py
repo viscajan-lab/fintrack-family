@@ -436,6 +436,31 @@ class SupabaseService:
             "ratio":     spent / limit,
         }
 
+    async def get_tenants_for_budget_alert(self, day: date) -> list[dict]:
+        """Tenant dengan alert budget aktif yang BELUM dikirimi alert hari ini (WIB).
+
+        Dipakai scheduler push budget proaktif: filter di sisi DB supaya loop
+        cuma memproses tenant yang relevan (anti-dobel harian).
+        """
+        sb  = _get_client()
+        res = await asyncio.to_thread(
+            lambda: sb.table("tenants").select("*")
+            .eq("budget_alerts_enabled", True)
+            .or_(f"budget_alert_last_sent.is.null,budget_alert_last_sent.neq.{day}")
+            .execute()
+        )
+        return res.data or []
+
+    async def mark_budget_alert_sent(self, tenant_id: str, day: date) -> None:
+        """Tandai tanggal terakhir alert budget dikirim (anti-dobel harian)."""
+        sb = _get_client()
+        await asyncio.to_thread(
+            lambda: sb.table("tenants")
+            .update({"budget_alert_last_sent": str(day)})
+            .eq("id", tenant_id)
+            .execute()
+        )
+
     # ── Recurring rules (tagihan/langganan berulang) ──────────────────────────
 
     async def create_recurring(self, data: dict) -> dict:

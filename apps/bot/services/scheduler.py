@@ -28,11 +28,13 @@ from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from services.supabase_service import SupabaseService
-from services.waktu import now_wib, today_wib
+from services.waktu import now_wib
 
 log = logging.getLogger(__name__)
 
 RECURRING_HOUR = 8   # jam WIB untuk memproses recurring rules harian
+BUDGET_ALERT_HOUR = 20  # jam WIB untuk push alert budget proaktif (sebelum rekap grup 21:00)
+BUDGET_ALERT_THRESHOLD = 0.90  # kirim alert kalau pemakaian kategori >= 90% dari limit
 
 
 def format_idr(amount: int) -> str:
@@ -188,12 +190,110 @@ async def _process_group_recap(bot: Bot, db: SupabaseService, hour: int, today: 
     return sent
 
 
+# ── Tugas 4: push budget proaktif (alert kategori hampir/tembus limit) ────────
+
+async def _process_budget_alert(bot: Bot, db: SupabaseService, today: date) -> int:
+    """Kirim alert budget ke tenant yang punya kategori dengan pemakaian
+    >= BUDGET_ALERT_THRESHOLD (default 90%) pada bulan berjalan (WIB).
+
+    Target kirim: semua anggota tenant yang punya telegram_id, plus grup
+    keluarga bila group_chat_id terisi.
+    Anti-dobel: maksimal 1x/hari/tenant (budget_alert_last_sent == hari ini).
+    """
+    sent = 0
+    month, year = today.month, today.year
+    for tenant in await db.get_tenants_for_budget_alert(today):
+        # Guard tambahan (jaga-jaga bila filter DB longgar): skip yang sudah hari ini.
+        if str(tenant.get("budget_alert_last_sent")) == str(today):
+            continue
+        tenant_id = tenant["id"]
+        try:
+            budgets = await db.get_budgets(tenant_id, month, year)
+            if not budgets:
+                await db.mark_budget_alert_sent(tenant_id, today)
+                continue
+
+            # Peta pengeluaran per kategori bulan ini
+            spent_map: dict[str, int] = {
+                row["category_name"]: int(row.get("total") or 0)
+                for row in await db.get_expense_by_category(tenant_id, month, year)
+            }
+
+            # Kumpulkan kategori yang tembus/hampir tembus ambang
+            flagged: list[tuple[str, int, int, float]] = []  # (cat, limit, spent, ratio)
+            for b in budgets:
+                cat   = b["category_name"]
+                limit = int(b.get("amount") or 0)
+                if limit <= 0:
+                    continue
+                spent = spent_map.get(cat, 0)
+                ratio = spent / limit
+                if ratio >= BUDGET_ALERT_THRESHOLD:
+                    flagged.append((cat, limit, spent, ratio))
+
+            if not flagged:
+                # Tak ada yang perlu dialertkan → tetap tandai supaya tak dicek ulang tiap tick hari ini
+                await db.mark_budget_alert_sent(tenant_id, today)
+                continue
+
+            # Susun pesan alert
+            flagged.sort(key=lambda x: x[3], reverse=True)
+            lines: list[str] = []
+            for cat, limit, spent, ratio in flagged:
+                icon = "🔴" if ratio >= 1.0 else "🟠"
+                status = "JEBOL" if ratio >= 1.0 else f"{ratio*100:.0f}%"
+                sisa = limit - spent
+                sisa_str = (
+                    f"sisa {format_idr(sisa)}" if sisa >= 0
+                    else f"lewat {format_idr(abs(sisa))}"
+                )
+                lines.append(
+                    f"{icon} <b>{cat}</b> — {status}\n"
+                    f"   {format_idr(spent)} / {format_idr(limit)} ({sisa_str})"
+                )
+            body = "\n".join(lines)
+            tgl = today.strftime("%d-%m-%Y")
+            text = (
+                f"⚠️ <b>Peringatan Budget — {tgl}</b>\n\n"
+                f"Kategori berikut sudah menyentuh/melewati batas budget bulan ini:\n\n"
+                f"{body}\n\n"
+                f"Cek rinci: /budget • Detail lengkap di dashboard web. 💙"
+            )
+
+            # Kumpulkan chat target: anggota ber-telegram_id + grup (bila ada), tanpa dobel
+            targets: list[int] = []
+            for m in await db.get_tenant_members(tenant_id):
+                tg = m.get("telegram_id")
+                if tg:
+                    targets.append(tg)
+            group_chat = tenant.get("group_chat_id")
+            if group_chat:
+                targets.append(group_chat)
+            targets = list(dict.fromkeys(targets))  # dedup, jaga urutan
+
+            delivered = 0
+            for chat_id in targets:
+                try:
+                    await bot.send_message(chat_id, text, parse_mode="HTML")
+                    delivered += 1
+                except Exception as e:
+                    log.error("Gagal kirim alert budget ke %s: %s", chat_id, e)
+
+            await db.mark_budget_alert_sent(tenant_id, today)
+            if delivered:
+                sent += 1
+        except Exception as e:
+            log.error("Gagal proses alert budget tenant %s: %s", tenant_id, e)
+    return sent
+
+
 # ── Loop utama: tick per menit, WIB-aware ────────────────────────────────────
 
 async def scheduler_loop(bot: Bot, db: SupabaseService) -> None:
     """Task latar: tick tiap menit pada jam WIB, jalankan tugas jatuh tempo."""
     log.info("⏰ Scheduler WIB aktif (recurring %02d:00, reminder per-user).", RECURRING_HOUR)
     last_recurring_date: str | None = None
+    last_budget_alert_date: str | None = None
     while True:
         try:
             now = now_wib()
@@ -215,6 +315,12 @@ async def scheduler_loop(bot: Bot, db: SupabaseService) -> None:
                 g = await _process_group_recap(bot, db, now.hour, today)
                 if g:
                     log.info("Rekap grup terkirim: %d tenant (%02d:00 WIB).", g, now.hour)
+
+            # Alert budget proaktif: sekali sehari saat menit 0 jam BUDGET_ALERT_HOUR WIB
+            if now.hour == BUDGET_ALERT_HOUR and now.minute == 0 and last_budget_alert_date != str(today):
+                b = await _process_budget_alert(bot, db, today)
+                last_budget_alert_date = str(today)
+                log.info("Alert budget %s WIB: %d tenant dinotifikasi.", today, b)
 
             # Tidur sampai awal menit berikutnya (drift-free)
             await asyncio.sleep(max(1, 60 - now.second))
