@@ -166,6 +166,63 @@ export async function getMyRole(): Promise<UserRole> {
   return "member"
 }
 
+// ─── Panel /admin — ringkasan lintas-tenant (super_admin) ────────────────────
+// Data global dibuka lewat RPC SECURITY DEFINER (admin_list_tenants /
+// admin_global_stats) yang di-guard is_super_admin() di sisi DB — RLS biasa
+// membatasi ke tenant sendiri, jadi RPC ini satu-satunya jalan sah super_admin
+// melihat seluruh tenant. Non-super-admin: RPC balikan kosong (bukan error).
+
+export interface AdminTenantRow {
+  id: string
+  name: string
+  slug: string
+  plan: string
+  created_at: string
+  member_count: number
+  tx_count: number
+}
+
+export interface AdminGlobalStats {
+  tenant_count: number
+  member_count: number
+  tx_count: number
+  admin_count: number
+}
+
+export interface AdminOverview {
+  stats: AdminGlobalStats
+  tenants: AdminTenantRow[]
+}
+
+export async function getAdminOverview(): Promise<AdminOverview> {
+  const supabase = await createClient()
+
+  const [{ data: statsRows }, { data: tenantRows }] = await Promise.all([
+    supabase.rpc("admin_global_stats"),
+    supabase.rpc("admin_list_tenants"),
+  ])
+
+  const s = (statsRows ?? [])[0] as Partial<AdminGlobalStats> | undefined
+  const stats: AdminGlobalStats = {
+    tenant_count: Number(s?.tenant_count ?? 0),
+    member_count: Number(s?.member_count ?? 0),
+    tx_count:     Number(s?.tx_count ?? 0),
+    admin_count:  Number(s?.admin_count ?? 0),
+  }
+
+  const tenants: AdminTenantRow[] = (tenantRows ?? []).map((r: AdminTenantRow) => ({
+    id:           r.id,
+    name:         r.name,
+    slug:         r.slug,
+    plan:         r.plan,
+    created_at:   r.created_at,
+    member_count: Number(r.member_count ?? 0),
+    tx_count:     Number(r.tx_count ?? 0),
+  }))
+
+  return { stats, tenants }
+}
+
 // ─── Dashboard summary stats (current month) ─────────────────────────────────
 
 export async function getDashboardStats(): Promise<DashboardStats> {
