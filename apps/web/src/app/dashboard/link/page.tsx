@@ -1,10 +1,12 @@
 import { LinkClient } from "./LinkClient"
+import { SubTabs, PENGATURAN_TABS } from "@/components/layout/SubTabs"
 
 export const dynamic = "force-dynamic"
 
 export default function LinkPage() {
   return (
     <div className="p-6 space-y-5 max-w-2xl">
+      <SubTabs tabs={PENGATURAN_TABS} />
       <div>
         <h1 className="text-2xl font-bold">Hubungkan Akun</h1>
         <p className="text-sm text-[var(--color-muted)] mt-0.5">

@@ -7,38 +7,51 @@ import {
   ArrowLeftRight,
   PieChart,
   Settings,
-  Wallet,
   Repeat,
-  Link2,
-  Sparkles,
-  Users,
+  BarChart3,
   PiggyBank,
-  Tags,
-  LineChart,
-  History,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { logout } from "@/app/auth/actions"
 
-const NAV = [
+type NavItem = {
+  href: string
+  label: string
+  icon: typeof LayoutDashboard
+  // Sub-halaman yang membuat menu grup ini ikut ter-highlight.
+  match?: string[]
+}
+
+const NAV: NavItem[] = [
   { href: "/dashboard",              label: "Beranda",    icon: LayoutDashboard },
   { href: "/dashboard/transactions", label: "Transaksi",  icon: ArrowLeftRight },
   { href: "/dashboard/budget",       label: "Budget",     icon: PieChart },
   { href: "/dashboard/savings",      label: "Tabungan",   icon: PiggyBank },
-  { href: "/dashboard/categories",   label: "Kategori",   icon: Tags },
   { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
-  { href: "/dashboard/reports",      label: "Laporan",    icon: Wallet },
-  { href: "/dashboard/trends",       label: "Tren",       icon: LineChart },
-  { href: "/dashboard/insight",      label: "Insight",    icon: Sparkles },
-  { href: "/dashboard/riwayat",      label: "Riwayat",    icon: History },
-  { href: "/dashboard/members",      label: "Anggota",    icon: Users },
-  { href: "/dashboard/link",         label: "Hubungkan",  icon: Link2 },
-  { href: "/dashboard/settings",     label: "Pengaturan", icon: Settings },
+  {
+    href: "/dashboard/reports",
+    label: "Analisis",
+    icon: BarChart3,
+    match: ["/dashboard/reports", "/dashboard/trends", "/dashboard/insight", "/dashboard/riwayat"],
+  },
+  {
+    href: "/dashboard/settings",
+    label: "Pengaturan",
+    icon: Settings,
+    match: ["/dashboard/settings", "/dashboard/categories", "/dashboard/members", "/dashboard/link"],
+  },
 ]
 
 export function Sidebar() {
   const path = usePathname()
+
+  const isActive = (item: NavItem) => {
+    const targets = item.match ?? [item.href]
+    return targets.some(
+      (t) => path === t || (t !== "/dashboard" && path.startsWith(t + "/")) || (t !== "/dashboard" && path.startsWith(t)),
+    )
+  }
 
   return (
     <aside className="flex flex-col w-60 shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] h-screen sticky top-0">
@@ -52,8 +65,9 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV.map(({ href, label, icon: Icon }) => {
-          const active = path === href || (href !== "/dashboard" && path.startsWith(href))
+        {NAV.map((item) => {
+          const { href, label, icon: Icon } = item
+          const active = isActive(item)
           return (
             <Link
               key={href}

@@ -4,6 +4,7 @@ import { SpendingChart } from "@/components/charts/SpendingChart"
 import { CategoryBreakdown } from "@/components/charts/CategoryBreakdown"
 import { formatIDR }     from "@/lib/utils"
 import { getDashboardStats, getChartData, getExpenseByCategory } from "@/lib/data/queries"
+import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
 
 export const dynamic = "force-dynamic"
 
@@ -18,6 +19,7 @@ export default async function ReportsPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <SubTabs tabs={ANALISIS_TABS} />
       <div>
         <h1 className="text-2xl font-bold">Laporan</h1>
         <p className="text-sm text-[var(--color-muted)] mt-0.5">Ringkasan arus kas keluarga — 6 bulan terakhir.</p>

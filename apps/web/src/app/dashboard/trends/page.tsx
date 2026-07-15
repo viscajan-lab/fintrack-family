@@ -4,6 +4,7 @@ import { YearlyTrendChart } from "@/components/charts/YearlyTrendChart"
 import { YearSelector }     from "@/components/charts/YearSelector"
 import { formatIDR }        from "@/lib/utils"
 import { getYearlyTrend, getAvailableYears } from "@/lib/data/queries"
+import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
 
 export const dynamic = "force-dynamic"
 
@@ -27,6 +28,7 @@ export default async function TrendsPage({ searchParams }: Props) {
 
   return (
     <div className="p-6 space-y-6">
+      <SubTabs tabs={ANALISIS_TABS} />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Tren Tahunan</h1>

@@ -1,6 +1,7 @@
 import { History, Plus, Pencil, Trash2 } from "lucide-react"
 import { getAuditLogs, type AuditLog } from "@/lib/data/queries"
 import { formatIDR } from "@/lib/utils"
+import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
 
 export const dynamic = "force-dynamic"
 
@@ -40,6 +41,7 @@ export default async function RiwayatPage() {
 
   return (
     <div className="p-6 space-y-6">
+      <SubTabs tabs={ANALISIS_TABS} />
       <div>
         <h1 className="text-2xl font-bold">Riwayat Aktivitas</h1>
         <p className="text-sm text-[var(--color-muted)] mt-0.5">
