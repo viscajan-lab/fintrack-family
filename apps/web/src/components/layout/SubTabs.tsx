@@ -54,3 +54,12 @@ export const PENGATURAN_TABS: SubTab[] = [
   { href: "/dashboard/members",    label: "Anggota" },
   { href: "/dashboard/link",       label: "Hubungkan" },
 ]
+
+/**
+ * Tab Pengaturan yang boleh dilihat sesuai role. Member biasa hanya "Umum"
+ * (tema/password); Kategori/Anggota/Hubungkan khusus admin & super_admin.
+ */
+export function pengaturanTabs(role: "super_admin" | "admin" | "member"): SubTab[] {
+  if (role === "member") return PENGATURAN_TABS.filter((t) => t.href === "/dashboard/settings")
+  return PENGATURAN_TABS
+}

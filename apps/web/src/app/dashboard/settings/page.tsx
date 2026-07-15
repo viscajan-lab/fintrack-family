@@ -1,9 +1,10 @@
 import Link from "next/link"
 import { Mail, CheckCircle2, XCircle, Users, MessageCircle } from "lucide-react"
 import { getLinkStatus, getReminderStatus, getGroupStatus } from "./actions"
+import { getMyRole } from "@/lib/data/queries"
 import { ReminderCard } from "@/components/settings/ReminderCard"
 import { GroupCard } from "@/components/settings/GroupCard"
-import { SubTabs, PENGATURAN_TABS } from "@/components/layout/SubTabs"
+import { SubTabs, pengaturanTabs } from "@/components/layout/SubTabs"
 
 export const dynamic = "force-dynamic"
 
@@ -13,13 +14,14 @@ function fmtDate(iso: string | null): string {
 }
 
 export default async function SettingsPage() {
+  const role = await getMyRole()
   const s = await getLinkStatus()
   const reminder = await getReminderStatus()
   const group = await getGroupStatus()
 
   return (
     <div className="p-6 space-y-5 max-w-2xl">
-      <SubTabs tabs={PENGATURAN_TABS} />
+      <SubTabs tabs={pengaturanTabs(role)} />
       <div>
         <h1 className="text-2xl font-bold">Pengaturan</h1>
         <p className="text-sm text-[var(--color-muted)] mt-0.5">Kelola akun dan koneksi bot Telegram kamu.</p>

@@ -1,15 +1,19 @@
-import { getCategories }     from "@/lib/data/queries"
+import { redirect } from "next/navigation"
+import { getCategories, getMyRole } from "@/lib/data/queries"
 import { CategoryManager }   from "@/components/categories/CategoryManager"
-import { SubTabs, PENGATURAN_TABS } from "@/components/layout/SubTabs"
+import { SubTabs, pengaturanTabs } from "@/components/layout/SubTabs"
 
 export const dynamic = "force-dynamic"
 
 export default async function CategoriesPage() {
+  const role = await getMyRole()
+  if (role === "member") redirect("/dashboard/settings")
+
   const categories = await getCategories()
 
   return (
     <div className="p-6 space-y-5">
-      <SubTabs tabs={PENGATURAN_TABS} />
+      <SubTabs tabs={pengaturanTabs(role)} />
       <CategoryManager categories={categories} />
     </div>
   )

@@ -10,10 +10,12 @@ import {
   Repeat,
   BarChart3,
   PiggyBank,
+  ShieldCheck,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { logout } from "@/app/auth/actions"
+import type { UserRole } from "@/lib/data/queries"
 
 type NavItem = {
   href: string
@@ -21,6 +23,8 @@ type NavItem = {
   icon: typeof LayoutDashboard
   // Sub-halaman yang membuat menu grup ini ikut ter-highlight.
   match?: string[]
+  // Role minimum yang boleh melihat menu ini. Default: semua role.
+  minRole?: UserRole
 }
 
 const NAV: NavItem[] = [
@@ -41,10 +45,29 @@ const NAV: NavItem[] = [
     icon: Settings,
     match: ["/dashboard/settings", "/dashboard/categories", "/dashboard/members", "/dashboard/link"],
   },
+  {
+    href: "/admin",
+    label: "Admin",
+    icon: ShieldCheck,
+    match: ["/admin"],
+    minRole: "super_admin",
+  },
 ]
 
-export function Sidebar() {
+// Peringkat role untuk perbandingan minRole (makin tinggi makin berkuasa).
+const ROLE_RANK: Record<UserRole, number> = {
+  member: 0,
+  admin: 1,
+  super_admin: 2,
+}
+
+export function Sidebar({ role }: { role: UserRole }) {
   const path = usePathname()
+
+  // Sembunyikan menu yang butuh role lebih tinggi dari role user.
+  const visibleNav = NAV.filter(
+    (item) => !item.minRole || ROLE_RANK[role] >= ROLE_RANK[item.minRole],
+  )
 
   const isActive = (item: NavItem) => {
     const targets = item.match ?? [item.href]
@@ -65,7 +88,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV.map((item) => {
+        {visibleNav.map((item) => {
           const { href, label, icon: Icon } = item
           const active = isActive(item)
           return (

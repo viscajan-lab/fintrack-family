@@ -146,6 +146,26 @@ async function getTenantId(): Promise<string | null> {
   return data?.tenant_id ?? null
 }
 
+// Role tertinggi user login lintas semua tenant: super_admin > admin > member.
+// Dipakai untuk gating menu sidebar & akses panel /admin (model SaaS managed).
+export type UserRole = "super_admin" | "admin" | "member"
+
+export async function getMyRole(): Promise<UserRole> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return "member"
+
+  const { data } = await supabase
+    .from("tenant_members")
+    .select("role")
+    .eq("user_id", user.id)
+
+  const roles = new Set((data ?? []).map((r) => r.role))
+  if (roles.has("super_admin")) return "super_admin"
+  if (roles.has("admin")) return "admin"
+  return "member"
+}
+
 // ─── Dashboard summary stats (current month) ─────────────────────────────────
 
 export async function getDashboardStats(): Promise<DashboardStats> {
