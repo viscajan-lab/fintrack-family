@@ -10,6 +10,7 @@ import {
   Repeat,
   BarChart3,
   PiggyBank,
+  Wallet,
   ShieldCheck,
   LogOut,
 } from "lucide-react"
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard",              label: "Beranda",    icon: LayoutDashboard },
   { href: "/dashboard/transactions", label: "Transaksi",  icon: ArrowLeftRight },
   { href: "/dashboard/budget",       label: "Budget",     icon: PieChart },
+  { href: "/dashboard/kantong",      label: "Kantong",    icon: Wallet },
   { href: "/dashboard/savings",      label: "Tabungan",   icon: PiggyBank },
   { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
   {

@@ -948,3 +948,196 @@ export async function getYearlyTrend(year: number): Promise<YearlyTrendData> {
   }
 }
 
+// ─── Kantong per anggota (allowance + terpakai + sisa) ────────────────────────
+// Setiap anggota punya "kantong" = jatah pengeluaran bulanan. Tiap transaksi
+// expense yang ditandai member_id-nya mengurangi sisa kantong anggota tsb.
+
+export type PocketLevel = "safe" | "warning" | "danger" | "over"
+
+export interface MemberPocket {
+  member_id:    string
+  display_name: string
+  role:         "admin" | "member"
+  isMe:         boolean
+  allowance:    number    // jatah bulan ini (0 jika belum di-set)
+  spent:        number    // total expense bertanda member_id ini bulan ini
+  remaining:    number    // allowance - spent (bisa negatif jika lewat)
+  pct:          number    // 0-100+ (dibulatkan), 0 jika allowance 0
+  level:        PocketLevel
+  hasAllowance: boolean   // sudah di-set jatah untuk bulan ini
+}
+
+export interface PocketsData {
+  month:       string        // "YYYY-MM"
+  year:        number
+  monthNum:    number        // 1-12
+  isAdmin:     boolean       // boleh set jatah anggota
+  pockets:     MemberPocket[]
+  totalAllowance: number
+  totalSpent:     number
+  unassignedSpent: number    // expense bulan ini tanpa member_id ("Belum ditandai")
+}
+
+function pocketLevel(pct: number): PocketLevel {
+  if (pct >  100) return "over"
+  if (pct >=  90) return "danger"
+  if (pct >=  75) return "warning"
+  return "safe"
+}
+
+export async function getPockets(monthStr?: string): Promise<PocketsData | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const tenantId = await getTenantId()
+  if (!user || !tenantId) return null
+
+  // Tentukan bulan target (default: bulan berjalan)
+  const now = new Date()
+  let year  = now.getFullYear()
+  let month = now.getMonth() + 1
+  if (monthStr && /^\d{4}-\d{2}$/.test(monthStr)) {
+    const [y, m] = monthStr.split("-").map((n) => parseInt(n, 10))
+    if (y && m >= 1 && m <= 12) { year = y; month = m }
+  }
+  const from = `${year}-${String(month).padStart(2, "0")}-01`
+  const next = new Date(year, month, 1)
+  const to   = next.toISOString().split("T")[0]
+
+  // Daftar anggota
+  const { data: rows } = await supabase
+    .from("tenant_members")
+    .select("id, display_name, role, user_id")
+    .eq("tenant_id", tenantId)
+    .order("role", { ascending: true })
+    .order("display_name", { ascending: true })
+
+  // Jatah bulan ini
+  const { data: allowRows } = await supabase
+    .from("member_allowances")
+    .select("member_id, amount")
+    .eq("tenant_id", tenantId)
+    .eq("year", year)
+    .eq("month", month)
+
+  const allowanceByMember: Record<string, number> = {}
+  for (const a of allowRows ?? []) allowanceByMember[a.member_id] = a.amount
+
+  // Expense bulan ini (dengan member_id) → agregat terpakai per anggota
+  const { data: txs } = await supabase
+    .from("transactions")
+    .select("amount, member_id")
+    .eq("tenant_id", tenantId)
+    .eq("type", "expense")
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
+
+  const spentByMember: Record<string, number> = {}
+  let unassignedSpent = 0
+  for (const tx of txs ?? []) {
+    if (tx.member_id) {
+      spentByMember[tx.member_id] = (spentByMember[tx.member_id] ?? 0) + tx.amount
+    } else {
+      unassignedSpent += tx.amount
+    }
+  }
+
+  const isAdmin = (rows ?? []).some((r) => r.user_id === user.id && r.role === "admin")
+
+  let totalAllowance = 0
+  let totalSpent     = 0
+
+  const pockets: MemberPocket[] = (rows ?? []).map((r) => {
+    const allowance = allowanceByMember[r.id] ?? 0
+    const spent     = spentByMember[r.id] ?? 0
+    const remaining = allowance - spent
+    const pct       = allowance > 0 ? Math.round((spent / allowance) * 100) : 0
+    totalAllowance += allowance
+    totalSpent     += spent
+    return {
+      member_id:    r.id,
+      display_name: r.display_name ?? "Tanpa nama",
+      role:         r.role === "admin" ? "admin" : "member",
+      isMe:         r.user_id === user.id,
+      allowance,
+      spent,
+      remaining,
+      pct,
+      level:        allowance > 0 ? pocketLevel(pct) : "safe",
+      hasAllowance: allowance > 0,
+    }
+  })
+
+  return {
+    month:    `${year}-${String(month).padStart(2, "0")}`,
+    year,
+    monthNum: month,
+    isAdmin,
+    pockets,
+    totalAllowance,
+    totalSpent,
+    unassignedSpent,
+  }
+}
+
+// ─── Ranking "siapa paling ngabisin" (spending per anggota bulan ini) ─────────
+export interface MemberSpendingRow {
+  member_id:    string | null   // null = "Belum ditandai"
+  display_name: string
+  spent:        number
+  pct:          number          // porsi dari total expense bulan ini (0-100)
+}
+
+export async function getMemberSpending(monthStr?: string): Promise<MemberSpendingRow[]> {
+  const pockets = await getPockets(monthStr)
+  if (!pockets) return []
+
+  const total = pockets.totalSpent + pockets.unassignedSpent
+  const rows: MemberSpendingRow[] = pockets.pockets
+    .filter((p) => p.spent > 0)
+    .map((p) => ({
+      member_id:    p.member_id,
+      display_name: p.display_name,
+      spent:        p.spent,
+      pct:          total > 0 ? Math.round((p.spent / total) * 100) : 0,
+    }))
+
+  if (pockets.unassignedSpent > 0) {
+    rows.push({
+      member_id:    null,
+      display_name: "Belum ditandai",
+      spent:        pockets.unassignedSpent,
+      pct:          total > 0 ? Math.round((pockets.unassignedSpent / total) * 100) : 0,
+    })
+  }
+
+  rows.sort((a, b) => b.spent - a.spent)
+  return rows
+}
+
+// ─── Daftar anggota ringkas untuk pemilih di form transaksi ───────────────────
+export interface PickerMember {
+  id:           string
+  display_name: string
+  isMe:         boolean
+}
+
+export async function getMembersForPicker(): Promise<PickerMember[]> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  const tenantId = await getTenantId()
+  if (!user || !tenantId) return []
+
+  const { data: rows } = await supabase
+    .from("tenant_members")
+    .select("id, display_name, user_id")
+    .eq("tenant_id", tenantId)
+    .order("role", { ascending: true })
+    .order("display_name", { ascending: true })
+
+  return (rows ?? []).map((r) => ({
+    id:           r.id,
+    display_name: r.display_name ?? "Tanpa nama",
+    isMe:         r.user_id === user.id,
+  }))
+}
+

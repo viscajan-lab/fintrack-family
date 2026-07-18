@@ -4,6 +4,7 @@ import { useState, useTransition, useRef } from "react"
 import { Plus, X, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { addTransaction } from "@/app/dashboard/actions"
+import type { PickerMember } from "@/lib/data/queries"
 
 const CATEGORIES = [
   { id: "makanan",    name: "Makanan & Minuman",  type: "expense" },
@@ -19,12 +20,16 @@ const CATEGORIES = [
   { id: "lainnya",    name: "Lainnya",             type: "both"    },
 ]
 
-export function AddTransactionButton() {
+export function AddTransactionButton({ members = [] }: { members?: PickerMember[] }) {
   const [open, setOpen]     = useState(false)
   const [type, setType]     = useState<"income" | "expense">("expense")
   const [error, setError]   = useState<string | null>(null)
   const [isPending, start]  = useTransition()
   const formRef             = useRef<HTMLFormElement>(null)
+
+  // Default pemilih anggota = diriku sendiri (kalau ada di daftar)
+  const myMember  = members.find((m) => m.isMe)
+  const defaultMember = myMember?.id ?? ""
 
   const cats = CATEGORIES.filter(c => c.type === type || c.type === "both")
   const today = new Date().toISOString().split("T")[0]
@@ -125,6 +130,27 @@ export function AddTransactionButton() {
                   </select>
                 </div>
               </div>
+
+              {/* Kantong: pemilih anggota (hanya untuk pengeluaran) */}
+              {type === "expense" && members.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-[var(--color-muted)] mb-1">
+                    Kantong siapa? <span className="text-[var(--color-muted)]">(jatah anggota berkurang)</span>
+                  </label>
+                  <select
+                    name="member_id"
+                    defaultValue={defaultMember}
+                    className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] outline-none focus:ring-2 focus:ring-[var(--color-brand-500)]"
+                  >
+                    <option value="">— Belum ditandai —</option>
+                    {members.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.display_name}{m.isMe ? " (aku)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Notes */}
               <div>

@@ -1,11 +1,14 @@
-import { getTransactions } from "@/lib/data/queries"
+import { getTransactions, getMembersForPicker } from "@/lib/data/queries"
 import { TransactionsList } from "@/components/transactions/TransactionsList"
 import { AddTransactionButton } from "@/components/transactions/AddTransactionButton"
 
 export const dynamic = "force-dynamic"
 
 export default async function TransactionsPage() {
-  const { rows, total } = await getTransactions({ limit: 50 })
+  const [{ rows, total }, members] = await Promise.all([
+    getTransactions({ limit: 50 }),
+    getMembersForPicker(),
+  ])
 
   return (
     <div className="p-6 space-y-5">
@@ -16,7 +19,7 @@ export default async function TransactionsPage() {
             {total} transaksi tersimpan
           </p>
         </div>
-        <AddTransactionButton />
+        <AddTransactionButton members={members} />
       </div>
 
       <TransactionsList initialRows={rows} />

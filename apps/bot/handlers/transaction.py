@@ -69,11 +69,13 @@ def build_budget_warning(status: dict, just_added: int) -> str | None:
     return None
 
 
-def confirm_keyboard(tx_id: str, tx_type: str = "expense") -> InlineKeyboardMarkup:
+def confirm_keyboard(tx_id: str, tx_type: str = "expense", member_name: str | None = None) -> InlineKeyboardMarkup:
     # Tombol toggle: tunjukkan arah GANTI, bukan tipe saat ini (biar jelas 1-tap mau ke apa).
     toggle = "🔄 Jadikan Pemasukan 📥" if tx_type == "expense" else "🔄 Jadikan Pengeluaran 📤"
+    member_btn = f"👤 Untuk: {member_name}" if member_name else "👤 Pilih Anggota"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=toggle, callback_data=f"tx_type:{tx_id}")],
+        [InlineKeyboardButton(text=member_btn, callback_data=f"tx_member:{tx_id}")],
         [
             InlineKeyboardButton(text="✅ Simpan",  callback_data=f"tx_save:{tx_id}"),
             InlineKeyboardButton(text="✏️ Edit",    callback_data=f"tx_edit:{tx_id}"),
@@ -91,28 +93,36 @@ def delete_keyboard(tx_id: str) -> InlineKeyboardMarkup:
 def confirm_text(result: dict) -> str:
     """Bangun teks konfirmasi transaksi (dipakai handler teks & nota)."""
     icon = "📥" if result["type"] == "income" else "📤"
+    member_line = ""
+    if result.get("member_name"):
+        member_line = f"Untuk      : {result['member_name']}\n"
     return (
         f"{icon} *Konfirmasi Transaksi*\n\n"
         f"Jenis      : {'Pemasukan' if result['type'] == 'income' else 'Pengeluaran'}\n"
         f"Nominal    : *{format_idr(result['amount'])}*\n"
         f"Keterangan : {result['description']}\n"
-        f"Kategori   : {result['category_name']}\n\n"
+        f"Kategori   : {result['category_name']}\n"
+        f"{member_line}\n"
         f"Simpan transaksi ini?"
     )
 
 
 async def _stage_draft(result: dict, member: dict, message: Message, state: FSMContext) -> None:
     """Simpan draft ke FSM + kirim kartu konfirmasi. Dipakai teks & nota."""
-    await state.update_data(draft={
+    # Default anggota = si pencatat sendiri (tenant_members.id + display_name).
+    draft = {
         **result,
         "tenant_id":   member["tenant_id"],
         "recorded_by": member.get("user_id"),
-    })
+        "member_id":   member.get("id"),
+        "member_name": member.get("display_name"),
+    }
+    await state.update_data(draft=draft)
     await state.set_state(TransactionStates.confirming)
     await message.answer(
-        confirm_text(result),
+        confirm_text(draft),
         parse_mode="Markdown",
-        reply_markup=confirm_keyboard("draft", result["type"]),
+        reply_markup=confirm_keyboard("draft", draft["type"], draft.get("member_name")),
     )
 
 
@@ -192,15 +202,19 @@ async def cb_save(callback: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
         return
 
-    tx = await db.create_transaction(draft)
+    # `member_name` cuma buat tampilan kartu — BUKAN kolom di tabel transactions.
+    # Wajib dibuang sebelum insert biar Supabase gak nolak (unknown column).
+    insert_payload = {k: v for k, v in draft.items() if k != "member_name"}
+    tx = await db.create_transaction(insert_payload)
     await state.clear()
 
     icon = "📥" if draft["type"] == "income" else "📤"
     if callback.message:
+        member_line = f"\nUntuk: {draft['member_name']}" if draft.get("member_name") else ""
         await callback.message.edit_text(  # type: ignore[union-attr]
             f"{icon} *Tersimpan!*\n\n"
             f"*{format_idr(draft['amount'])}* — {draft['description']}\n"
-            f"Kategori: {draft['category_name']}",
+            f"Kategori: {draft['category_name']}{member_line}",
             parse_mode="Markdown",
             reply_markup=delete_keyboard(tx["id"]),
         )
@@ -252,11 +266,99 @@ async def cb_toggle_type(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.edit_text(  # type: ignore[union-attr]
             confirm_text(draft),
             parse_mode="Markdown",
-            reply_markup=confirm_keyboard("draft", draft["type"]),
+            reply_markup=confirm_keyboard("draft", draft["type"], draft.get("member_name")),
         )
     await callback.answer(
         "📥 Diubah jadi Pemasukan" if draft["type"] == "income" else "📤 Diubah jadi Pengeluaran"
     )
+
+
+# ── Callback: Buka pemilih anggota ───────────────────────────────────────────
+def member_picker_keyboard(members: list[dict], current_id: str | None) -> InlineKeyboardMarkup:
+    """Daftar anggota tenant sebagai tombol. Anggota terpilih ditandai ✅."""
+    rows = []
+    for m in members:
+        mark = "✅ " if m["id"] == current_id else ""
+        icon = "👑" if m.get("role") == "admin" else "👤"
+        rows.append([InlineKeyboardButton(
+            text=f"{mark}{icon} {m['display_name']}",
+            callback_data=f"tx_setmember:{m['id']}",
+        )])
+    rows.append([InlineKeyboardButton(text="⬅️ Kembali", callback_data="tx_backcard:draft")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data.startswith("tx_member:"))
+async def cb_member_picker(callback: CallbackQuery, state: FSMContext) -> None:
+    data  = await state.get_data()
+    draft = data.get("draft")
+    if not draft:
+        await callback.answer("Sesi habis, coba input lagi.")
+        await state.clear()
+        return
+
+    members = await db.get_tenant_members(draft["tenant_id"])
+    if not members:
+        await callback.answer("Belum ada anggota lain.", show_alert=True)
+        return
+
+    if callback.message:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            "👥 *Transaksi ini untuk siapa?*\n\n"
+            "Pilih anggota yang jatah/kantongnya dipakai:",
+            parse_mode="Markdown",
+            reply_markup=member_picker_keyboard(members, draft.get("member_id")),
+        )
+    await callback.answer()
+
+
+# ── Callback: Set anggota terpilih → balik ke kartu konfirmasi ───────────────
+@router.callback_query(F.data.startswith("tx_setmember:"))
+async def cb_set_member(callback: CallbackQuery, state: FSMContext) -> None:
+    data  = await state.get_data()
+    draft = data.get("draft")
+    if not draft:
+        await callback.answer("Sesi habis, coba input lagi.")
+        await state.clear()
+        return
+
+    member_id = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    members   = await db.get_tenant_members(draft["tenant_id"])
+    chosen    = next((m for m in members if m["id"] == member_id), None)
+    if not chosen:
+        await callback.answer("Anggota tidak ditemukan.", show_alert=True)
+        return
+
+    draft["member_id"]   = chosen["id"]
+    draft["member_name"] = chosen["display_name"]
+    await state.update_data(draft=draft)
+
+    if callback.message:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            confirm_text(draft),
+            parse_mode="Markdown",
+            reply_markup=confirm_keyboard("draft", draft["type"], draft.get("member_name")),
+        )
+    await callback.answer(f"👤 Untuk {chosen['display_name']}")
+
+
+# ── Callback: Kembali ke kartu konfirmasi dari pemilih anggota ───────────────
+@router.callback_query(F.data.startswith("tx_backcard:"))
+async def cb_back_card(callback: CallbackQuery, state: FSMContext) -> None:
+    data  = await state.get_data()
+    draft = data.get("draft")
+    if not draft:
+        await callback.answer("Sesi habis, coba input lagi.")
+        await state.clear()
+        return
+
+    if callback.message:
+        await callback.message.edit_text(  # type: ignore[union-attr]
+            confirm_text(draft),
+            parse_mode="Markdown",
+            reply_markup=confirm_keyboard("draft", draft["type"], draft.get("member_name")),
+        )
+    await callback.answer()
 
 
 # ── Callback: Edit draft (ketik ulang) ───────────────────────────────────────
@@ -300,7 +402,7 @@ async def cancel_edit(message: Message, state: FSMContext) -> None:
     await message.answer(
         confirm_text(draft),
         parse_mode="Markdown",
-        reply_markup=confirm_keyboard("draft", draft["type"]),
+        reply_markup=confirm_keyboard("draft", draft["type"], draft.get("member_name")),
     )
 
 
@@ -327,17 +429,20 @@ async def edit_got_text(message: Message, state: FSMContext) -> None:
         )
         return
 
-    # Refresh draft: pakai hasil parse baru + pertahankan tenant/recorded_by.
-    await state.update_data(draft={
+    # Refresh draft: pakai hasil parse baru + pertahankan tenant/recorded_by + anggota terpilih.
+    new_draft = {
         **result,
         "tenant_id":   draft["tenant_id"],
         "recorded_by": draft.get("recorded_by"),
-    })
+        "member_id":   draft.get("member_id"),
+        "member_name": draft.get("member_name"),
+    }
+    await state.update_data(draft=new_draft)
     await state.set_state(TransactionStates.confirming)
     await message.answer(
-        confirm_text(result),
+        confirm_text(new_draft),
         parse_mode="Markdown",
-        reply_markup=confirm_keyboard("draft", result["type"]),
+        reply_markup=confirm_keyboard("draft", new_draft["type"], new_draft.get("member_name")),
     )
 
 

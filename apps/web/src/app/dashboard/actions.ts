@@ -61,6 +61,7 @@ export async function addTransaction(formData: FormData) {
   const date           = formData.get("date") as string
   const category_name  = formData.get("category_name") as string | null
   const notes          = formData.get("notes") as string | null
+  const member_id      = formData.get("member_id") as string | null
 
   if (!description || !type || !amount || !date) {
     return { error: "Deskripsi, tipe, jumlah, dan tanggal wajib diisi" }
@@ -76,6 +77,7 @@ export async function addTransaction(formData: FormData) {
     transaction_date: date,
     category_name:    category_name || null,
     notes:            notes || null,
+    member_id:        member_id || null,
   }).select().single()
 
   if (error) return { error: error.message }
@@ -88,6 +90,7 @@ export async function addTransaction(formData: FormData) {
 
   revalidatePath("/dashboard")
   revalidatePath("/dashboard/transactions")
+  revalidatePath("/dashboard/kantong")
   return { success: true }
 }
 
@@ -126,6 +129,67 @@ export async function addBudget(formData: FormData) {
   if (error) return { error: error.message }
 
   revalidatePath("/dashboard/budget")
+  return { success: true }
+}
+
+// ─── Set Jatah Kantong Anggota (admin-only, upsert per bulan) ─────────────────
+
+export async function setMemberAllowance(formData: FormData) {
+  const supabase  = await createClient()
+  const tenantId  = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Hanya admin yang boleh set jatah
+  const { data: me } = await supabase
+    .from("tenant_members")
+    .select("role")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", user!.id)
+    .maybeSingle()
+  if (me?.role !== "admin") {
+    return { error: "Hanya admin yang bisa mengatur jatah kantong" }
+  }
+
+  const member_id = formData.get("member_id") as string
+  const amount    = parseInt((formData.get("amount") as string).replace(/\D/g, ""), 10)
+  const monthStr  = formData.get("month") as string   // YYYY-MM
+
+  if (!member_id || !monthStr || Number.isNaN(amount) || amount < 0) {
+    return { error: "Anggota, jumlah, dan bulan wajib diisi (jumlah tidak boleh negatif)" }
+  }
+
+  const [yearPart, monthPart] = monthStr.split("-")
+  const year  = parseInt(yearPart, 10)
+  const month = parseInt(monthPart, 10)               // 1-12 (smallint)
+  if (!year || !month || month < 1 || month > 12) {
+    return { error: "Format bulan tidak valid" }
+  }
+
+  // Pastikan member_id memang anggota tenant ini (cegah set jatah lintas-tenant)
+  const { data: target } = await supabase
+    .from("tenant_members")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("id", member_id)
+    .maybeSingle()
+  if (!target) {
+    return { error: "Anggota tidak ditemukan di keluarga ini" }
+  }
+
+  // Upsert: jika sudah ada jatah anggota ini di bulan+tahun ini, update
+  const { error } = await supabase.from("member_allowances").upsert({
+    tenant_id: tenantId,
+    member_id,
+    amount,
+    month,
+    year,
+  }, { onConflict: "tenant_id,member_id,month,year" })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/kantong")
   return { success: true }
 }
 
