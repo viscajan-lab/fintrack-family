@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { AuthCard, Field, SubmitButton } from "@/components/auth/AuthCard"
 import { login } from "@/app/auth/actions"
 
@@ -23,13 +22,6 @@ export default async function LoginPage({ searchParams }: Props) {
           <SubmitButton label="Masuk" />
         </div>
       </form>
-
-      <p className="text-center text-sm text-[var(--color-muted)] mt-5">
-        Belum punya akun?{" "}
-        <Link href="/register" className="text-[var(--color-brand-500)] font-medium hover:underline">
-          Daftar sekarang
-        </Link>
-      </p>
     </AuthCard>
   )
 }

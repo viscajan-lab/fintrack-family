@@ -7,8 +7,9 @@ export const dynamic = "force-dynamic"
 export default async function WizardPage() {
   const state = await getWizardState()
 
-  // Belum login → arahkan ke register dulu (A1: register jadi fondasi wizard).
-  if (!state.authenticated) redirect("/register")
+  // Belum login → arahkan ke /login (pendaftaran mandiri dimatikan; akun
+  // dibuat oleh admin via undangan email).
+  if (!state.authenticated) redirect("/login")
 
   return <WizardClient initial={state} />
 }

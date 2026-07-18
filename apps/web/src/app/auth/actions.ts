@@ -1,7 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
-import { createClient, createAdminClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 
 export async function login(formData: FormData) {
   const email    = formData.get("email")    as string
@@ -17,54 +17,15 @@ export async function login(formData: FormData) {
   redirect("/dashboard")
 }
 
-export async function register(formData: FormData) {
-  const email      = formData.get("email")       as string
-  const password   = formData.get("password")    as string
-  const familyName = formData.get("family_name") as string
-
-  const admin = createAdminClient()
-
-  // 1. Buat user via admin — langsung confirmed, tidak butuh email verifikasi
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { family_name: familyName },
-  })
-
-  if (createErr) {
-    console.error("[register] createUser error:", createErr.message)
-    redirect(`/register?error=${encodeURIComponent(createErr.message)}`)
-  }
-
-  const userId = created.user.id
-
-  // 2. Buat tenant + tambah user sebagai admin
-  const slug = `${familyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${Date.now().toString(36)}`
-  const { data: tenant, error: tenantErr } = await admin
-    .from("tenants")
-    .insert({ name: familyName, slug, plan: "free", storage_type: "supabase" })
-    .select("id")
-    .single()
-
-  if (!tenantErr && tenant) {
-    await admin.from("tenant_members").insert({
-      tenant_id:    tenant.id,
-      user_id:      userId,
-      role:         "admin",
-      display_name: email.split("@")[0],
-    })
-  }
-
-  // 3. Sign in via anon client untuk set session cookie
-  const supabase = await createClient()
-  const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
-  if (signInErr) {
-    console.error("[register] signIn after create error:", signInErr.message)
-    redirect(`/login?error=${encodeURIComponent("Akun dibuat, silakan login")}`)
-  }
-
-  redirect("/dashboard")
+// Pendaftaran mandiri DIMATIKAN (model SaaS managed). Fungsi dipertahankan
+// sebagai guard eksplisit: kalau ada yang mem-POST langsung ke action ini,
+// mereka dilempar ke /login dengan pesan, bukan diam-diam bikin akun+tenant.
+// Provisioning akun sekarang lewat:
+//   - super_admin  -> daftarkan admin/kepala keluarga (app/admin/users/actions.ts)
+//   - admin        -> daftarkan member keluarga        (app/dashboard/members/actions.ts)
+// keduanya via undangan email (inviteUserByEmail) + set-password oleh user.
+export async function register(_formData: FormData) {
+  redirect(`/login?error=${encodeURIComponent("Pendaftaran mandiri dinonaktifkan. Hubungi admin untuk dibuatkan akun.")}`)
 }
 
 export async function logout() {
