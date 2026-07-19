@@ -41,10 +41,11 @@ export function SubTabs({ tabs }: { tabs: SubTab[] }) {
 
 /** Preset tab untuk grup Analisis. */
 export const ANALISIS_TABS: SubTab[] = [
-  { href: "/dashboard/reports", label: "Laporan" },
-  { href: "/dashboard/trends",  label: "Tren" },
-  { href: "/dashboard/insight", label: "Insight" },
-  { href: "/dashboard/riwayat", label: "Riwayat" },
+  { href: "/dashboard/reports",  label: "Laporan" },
+  { href: "/dashboard/trends",   label: "Tren" },
+  { href: "/dashboard/calendar", label: "Kalender" },
+  { href: "/dashboard/insight",  label: "Insight" },
+  { href: "/dashboard/riwayat",  label: "Riwayat" },
 ]
 
 /** Preset tab untuk grup Pengaturan. */

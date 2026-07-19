@@ -948,6 +948,140 @@ export async function getYearlyTrend(year: number): Promise<YearlyTrendData> {
   }
 }
 
+// ─── Kalender Cashflow (arus kas harian + saldo berjalan + prediksi) ──────────
+// Menampilkan pemasukan/pengeluaran per HARI dalam satu bulan, saldo berjalan
+// kumulatif (dalam bulan tsb), plus proyeksi saldo akhir bulan berdasarkan
+// rata-rata net harian dari hari-hari yang sudah berlalu.
+
+export interface CalendarDay {
+  day: number            // 1..daysInMonth
+  date: string           // YYYY-MM-DD
+  income: number
+  expense: number
+  net: number            // income - expense (hari itu)
+  balance: number        // saldo berjalan kumulatif s/d hari itu (dalam bulan)
+  txCount: number
+  isFuture: boolean      // hari setelah "hari ini" (untuk bulan berjalan)
+  isToday: boolean
+}
+
+export interface CashflowCalendarData {
+  year: number
+  month: number          // 1-12
+  monthName: string      // "Januari" dst
+  daysInMonth: number
+  leadingBlanks: number  // sel kosong sebelum tanggal 1 (0=Senin .. 6=Minggu)
+  days: CalendarDay[]
+  totalIncome: number
+  totalExpense: number
+  totalNet: number       // income - expense sebulan
+  endBalance: number     // saldo berjalan di hari terakhir yg ada aktivitas
+  busiestDay: number | null   // tanggal dgn |net| terbesar
+  busiestNet: number
+  isCurrentMonth: boolean
+  projectedNet: number | null // proyeksi net akhir bulan (hanya utk bulan berjalan)
+}
+
+const MONTHS_FULL_ID = [
+  "Januari","Februari","Maret","April","Mei","Juni",
+  "Juli","Agustus","September","Oktober","November","Desember",
+]
+
+export async function getCashflowCalendar(year: number, month: number): Promise<CashflowCalendarData> {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+
+  const m0 = Math.min(11, Math.max(0, month - 1))   // 0-indexed, clamp
+  const daysInMonth = new Date(year, m0 + 1, 0).getDate()
+  // getDay(): 0=Minggu..6=Sabtu. Kita mau minggu mulai Senin → geser.
+  const firstDow = new Date(year, m0, 1).getDay()
+  const leadingBlanks = (firstDow + 6) % 7            // 0=Senin .. 6=Minggu
+
+  const now = new Date()
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() === m0
+  const todayDate = now.getDate()
+
+  const mkDays = (): CalendarDay[] =>
+    Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1
+      return {
+        day,
+        date: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+        income: 0, expense: 0, net: 0, balance: 0, txCount: 0,
+        isFuture: isCurrentMonth && day > todayDate,
+        isToday:  isCurrentMonth && day === todayDate,
+      }
+    })
+
+  const empty: CashflowCalendarData = {
+    year, month, monthName: MONTHS_FULL_ID[m0], daysInMonth, leadingBlanks,
+    days: mkDays(), totalIncome: 0, totalExpense: 0, totalNet: 0, endBalance: 0,
+    busiestDay: null, busiestNet: 0, isCurrentMonth, projectedNet: null,
+  }
+  if (!tenantId) return empty
+
+  const from = `${year}-${String(month).padStart(2, "0")}-01`
+  const to   = m0 === 11
+    ? `${year + 1}-01-01`
+    : `${year}-${String(month + 1).padStart(2, "0")}-01`
+
+  const { data } = await supabase
+    .from("transactions")
+    .select("type, amount, transaction_date")
+    .eq("tenant_id", tenantId)
+    .gte("transaction_date", from)
+    .lt("transaction_date", to)
+
+  const rows = data ?? []
+  const days = mkDays()
+
+  for (const r of rows) {
+    const d = Number(String(r.transaction_date).slice(8, 10))
+    if (d < 1 || d > daysInMonth) continue
+    const idx = d - 1
+    if (r.type === "income")       days[idx].income  += r.amount
+    else if (r.type === "expense") days[idx].expense += r.amount
+    days[idx].txCount += 1
+  }
+
+  // net harian + saldo berjalan kumulatif
+  let running = 0
+  for (const d of days) {
+    d.net = d.income - d.expense
+    running += d.net
+    d.balance = running
+  }
+
+  const totalIncome  = days.reduce((s, d) => s + d.income, 0)
+  const totalExpense = days.reduce((s, d) => s + d.expense, 0)
+  const totalNet     = totalIncome - totalExpense
+
+  // hari tersibuk = |net| terbesar (yang ada aktivitas)
+  let busiestDay: number | null = null
+  let busiestNet = 0
+  for (const d of days) {
+    if (d.txCount > 0 && Math.abs(d.net) > Math.abs(busiestNet)) {
+      busiestNet = d.net
+      busiestDay = d.day
+    }
+  }
+
+  // proyeksi net akhir bulan (bulan berjalan): ekstrapolasi rata-rata net/hari
+  // dari hari 1..hari ini ke seluruh hari di bulan.
+  let projectedNet: number | null = null
+  if (isCurrentMonth && todayDate >= 1) {
+    const elapsed = Math.min(todayDate, daysInMonth)
+    const netToDate = days.slice(0, elapsed).reduce((s, d) => s + d.net, 0)
+    projectedNet = Math.round((netToDate / elapsed) * daysInMonth)
+  }
+
+  return {
+    year, month, monthName: MONTHS_FULL_ID[m0], daysInMonth, leadingBlanks,
+    days, totalIncome, totalExpense, totalNet, endBalance: running,
+    busiestDay, busiestNet, isCurrentMonth, projectedNet,
+  }
+}
+
 // ─── Kantong per anggota (allowance + terpakai + sisa) ────────────────────────
 // Setiap anggota punya "kantong" = jatah pengeluaran bulanan. Tiap transaksi
 // expense yang ditandai member_id-nya mengurangi sisa kantong anggota tsb.
