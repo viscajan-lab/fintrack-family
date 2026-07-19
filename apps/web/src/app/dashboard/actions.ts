@@ -556,3 +556,128 @@ export async function deleteCategory(id: string) {
   revalidateCategoryConsumers()
   return { success: true }
 }
+
+// ─── Hutang / Piutang (debts) ────────────────────────────────────────────────
+
+export async function addDebt(formData: FormData) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const direction  = (formData.get("direction") as string) || ""
+  const person     = ((formData.get("person_name") as string) || "").trim()
+  const amount     = parseInt(((formData.get("amount") as string) || "").replace(/\D/g, ""), 10)
+  const dueRaw     = ((formData.get("due_date") as string) || "").trim()
+  const due_date   = dueRaw || null
+  const note       = ((formData.get("note") as string) || "").trim() || null
+
+  if (direction !== "payable" && direction !== "receivable")
+    return { error: "Jenis (hutang/piutang) tidak valid" }
+  if (!person)                return { error: "Nama pihak wajib diisi" }
+  if (!amount || amount <= 0) return { error: "Nominal harus lebih dari 0" }
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { error } = await supabase.from("debts").insert({
+    tenant_id:   tenantId,
+    recorded_by: user?.id ?? null,
+    direction,
+    person_name: person,
+    amount,
+    due_date,
+    note,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/debts")
+  return { success: true }
+}
+
+// Catat cicilan bayar/terima. Otomatis tandai lunas saat paid >= amount.
+export async function recordDebtPayment(id: string, formData: FormData) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const delta = parseInt(((formData.get("amount") as string) || "").replace(/\D/g, ""), 10)
+  if (!delta || delta <= 0) return { error: "Jumlah pembayaran wajib diisi" }
+
+  const { data: debt, error: readErr } = await supabase
+    .from("debts")
+    .select("amount, paid_amount")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (readErr) return { error: readErr.message }
+  if (!debt)   return { error: "Data hutang/piutang tidak ditemukan" }
+
+  const amount   = debt.amount ?? 0
+  const newPaid  = Math.min((debt.paid_amount ?? 0) + delta, amount)  // tidak melebihi pokok
+  const settled  = newPaid >= amount
+
+  const { error } = await supabase
+    .from("debts")
+    .update({
+      paid_amount: newPaid,
+      settled_at:  settled ? new Date().toISOString() : null,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/debts")
+  return { success: true }
+}
+
+// Tandai lunas seketika (paid_amount = amount).
+export async function settleDebt(id: string) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { data: debt, error: readErr } = await supabase
+    .from("debts")
+    .select("amount")
+    .eq("id", id)
+    .eq("tenant_id", tenantId)
+    .maybeSingle()
+
+  if (readErr) return { error: readErr.message }
+  if (!debt)   return { error: "Data hutang/piutang tidak ditemukan" }
+
+  const { error } = await supabase
+    .from("debts")
+    .update({
+      paid_amount: debt.amount ?? 0,
+      settled_at:  new Date().toISOString(),
+      updated_at:  new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/debts")
+  return { success: true }
+}
+
+export async function deleteDebt(id: string) {
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return { error: "Tidak terautentikasi" }
+
+  const { error } = await supabase
+    .from("debts")
+    .delete()
+    .eq("id", id)
+    .eq("tenant_id", tenantId)   // RLS safety belt
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/dashboard/debts")
+  return { success: true }
+}

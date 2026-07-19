@@ -1275,3 +1275,112 @@ export async function getMembersForPicker(): Promise<PickerMember[]> {
   }))
 }
 
+// ─── Hutang / Piutang (debts) ────────────────────────────────────────────────
+
+export type DebtDirection = "payable" | "receivable"
+
+export interface Debt {
+  id:          string
+  direction:   DebtDirection    // payable = hutang, receivable = piutang
+  person_name: string
+  amount:      number           // pokok total
+  paid_amount: number           // sudah dibayar / diterima
+  remaining:   number           // max(amount - paid, 0)
+  pct:         number           // 0-100 (progres pelunasan)
+  due_date:    string | null    // YYYY-MM-DD
+  note:        string | null
+  settled:     boolean          // paid_amount >= amount
+  daysLeft:    number | null    // null jika tak ada jatuh tempo / sudah lunas
+  overdue:     boolean          // jatuh tempo lewat & belum lunas
+}
+
+export interface DebtSummary {
+  payableTotal:      number     // sisa hutang (yang harus dibayar)
+  receivableTotal:   number     // sisa piutang (yang akan diterima)
+  net:               number     // receivable - payable (positif = surplus)
+  overdueCount:      number     // item lewat jatuh tempo & belum lunas
+  activePayables:    number     // jumlah hutang belum lunas
+  activeReceivables: number     // jumlah piutang belum lunas
+}
+
+export interface DebtsData {
+  debts:   Debt[]
+  summary: DebtSummary
+}
+
+export async function getDebts(): Promise<DebtsData> {
+  const empty: DebtsData = {
+    debts: [],
+    summary: {
+      payableTotal: 0, receivableTotal: 0, net: 0,
+      overdueCount: 0, activePayables: 0, activeReceivables: 0,
+    },
+  }
+
+  const supabase = await createClient()
+  const tenantId = await getTenantId()
+  if (!tenantId) return empty
+
+  const { data } = await supabase
+    .from("debts")
+    .select("id, direction, person_name, amount, paid_amount, due_date, note, settled_at")
+    .eq("tenant_id", tenantId)
+    .order("settled_at", { ascending: true, nullsFirst: true })  // aktif dulu, lunas di bawah
+    .order("due_date",   { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false })
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const debts: Debt[] = (data ?? []).map((d) => {
+    const amount    = d.amount ?? 0
+    const paid      = d.paid_amount ?? 0
+    const remaining = Math.max(amount - paid, 0)
+    const settled   = !!d.settled_at || (amount > 0 && paid >= amount)
+    const pct       = amount > 0 ? Math.min(Math.round((paid / amount) * 100), 100) : 0
+
+    let daysLeft: number | null = null
+    let overdue = false
+    if (d.due_date && !settled) {
+      const due = new Date(`${d.due_date}T00:00:00`)
+      daysLeft = Math.ceil((due.getTime() - today.getTime()) / 86_400_000)
+      overdue  = daysLeft < 0
+    }
+
+    return {
+      id:          d.id,
+      direction:   d.direction as DebtDirection,
+      person_name: d.person_name,
+      amount,
+      paid_amount: paid,
+      remaining,
+      pct,
+      due_date:    d.due_date,
+      note:        d.note,
+      settled,
+      daysLeft,
+      overdue,
+    }
+  })
+
+  const summary: DebtSummary = debts.reduce(
+    (acc, d) => {
+      if (!d.settled) {
+        if (d.direction === "payable") {
+          acc.payableTotal   += d.remaining
+          acc.activePayables += 1
+        } else {
+          acc.receivableTotal   += d.remaining
+          acc.activeReceivables += 1
+        }
+        if (d.overdue) acc.overdueCount += 1
+      }
+      return acc
+    },
+    { payableTotal: 0, receivableTotal: 0, net: 0, overdueCount: 0, activePayables: 0, activeReceivables: 0 },
+  )
+  summary.net = summary.receivableTotal - summary.payableTotal
+
+  return { debts, summary }
+}
+

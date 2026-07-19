@@ -10,6 +10,7 @@ import {
   Repeat,
   BarChart3,
   PiggyBank,
+  HandCoins,
   Wallet,
   ShieldCheck,
   UserCog,
@@ -37,6 +38,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard/budget",       label: "Budget",     icon: PieChart },
   { href: "/dashboard/kantong",      label: "Kantong",    icon: Wallet },
   { href: "/dashboard/savings",      label: "Tabungan",   icon: PiggyBank },
+  { href: "/dashboard/debts",        label: "Hutang/Piutang", icon: HandCoins },
   { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
   {
     href: "/dashboard/reports",
