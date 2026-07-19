@@ -12,6 +12,7 @@ import {
   PiggyBank,
   Wallet,
   ShieldCheck,
+  UserCog,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,8 @@ type NavItem = {
   match?: string[]
   // Role minimum yang boleh melihat menu ini. Default: semua role.
   minRole?: UserRole
+  // Kalau true, hanya aktif saat path == href persis (tidak menangkap sub-path).
+  exact?: boolean
 }
 
 const NAV: NavItem[] = [
@@ -52,6 +55,14 @@ const NAV: NavItem[] = [
     label: "Admin",
     icon: ShieldCheck,
     match: ["/admin"],
+    exact: true,
+    minRole: "super_admin",
+  },
+  {
+    href: "/admin/users",
+    label: "Kelola Admin",
+    icon: UserCog,
+    match: ["/admin/users"],
     minRole: "super_admin",
   },
 ]
@@ -73,6 +84,7 @@ export function Sidebar({ role }: { role: UserRole }) {
 
   const isActive = (item: NavItem) => {
     const targets = item.match ?? [item.href]
+    if (item.exact) return targets.some((t) => path === t)
     return targets.some(
       (t) => path === t || (t !== "/dashboard" && path.startsWith(t + "/")) || (t !== "/dashboard" && path.startsWith(t)),
     )
