@@ -223,6 +223,45 @@ export async function getAdminOverview(): Promise<AdminOverview> {
   return { stats, tenants }
 }
 
+// ─── Panel /admin — monitoring admin aktif (super_admin) ─────────────────────
+// Pantau siapa admin (kepala keluarga) & kapan terakhir mereka login. Sumber
+// last_sign_in_at = auth.users (di-update Auth tiap login; NULL = belum pernah).
+// Dibuka lewat RPC SECURITY DEFINER admin_list_admins() yang di-guard
+// is_super_admin() di sisi DB. Non-super-admin: RPC balikan kosong (bukan error).
+
+export interface AdminMonitorRow {
+  member_id: string
+  user_id: string
+  display_name: string | null
+  email: string
+  role: string
+  tenant_id: string
+  tenant_name: string
+  member_count: number
+  joined_at: string
+  last_sign_in_at: string | null
+  user_created_at: string
+}
+
+export async function getAdminMonitoring(): Promise<AdminMonitorRow[]> {
+  const supabase = await createClient()
+  const { data } = await supabase.rpc("admin_list_admins")
+
+  return (data ?? []).map((r: AdminMonitorRow) => ({
+    member_id:       r.member_id,
+    user_id:         r.user_id,
+    display_name:    r.display_name ?? null,
+    email:           r.email,
+    role:            r.role,
+    tenant_id:       r.tenant_id,
+    tenant_name:     r.tenant_name,
+    member_count:    Number(r.member_count ?? 0),
+    joined_at:       r.joined_at,
+    last_sign_in_at: r.last_sign_in_at ?? null,
+    user_created_at: r.user_created_at,
+  }))
+}
+
 // ─── Dashboard summary stats (current month) ─────────────────────────────────
 
 export async function getDashboardStats(): Promise<DashboardStats> {
