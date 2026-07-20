@@ -12,7 +12,6 @@ import {
   PiggyBank,
   HandCoins,
   Wallet,
-  ShieldCheck,
   UserCog,
   LogOut,
 } from "lucide-react"
@@ -51,14 +50,6 @@ const NAV: NavItem[] = [
     label: "Pengaturan",
     icon: Settings,
     match: ["/dashboard/settings", "/dashboard/categories", "/dashboard/members", "/dashboard/link"],
-  },
-  {
-    href: "/admin",
-    label: "Admin",
-    icon: ShieldCheck,
-    match: ["/admin"],
-    exact: true,
-    minRole: "super_admin",
   },
   {
     href: "/admin/users",
