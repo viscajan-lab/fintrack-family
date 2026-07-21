@@ -31,6 +31,57 @@ async function getTenantId(userId: string): Promise<string | null> {
   return data?.tenant_id ?? null
 }
 
+// ─── Status: apakah akun web sudah terhubung ke Telegram ────────────────────────
+// "Terhubung" = user punya baris tenant_members dengan telegram_id terisi.
+
+export type LinkStatus = {
+  linked: boolean
+  telegramId: string | null
+  displayName: string | null
+}
+
+export async function getLinkStatus(): Promise<LinkStatus> {
+  const user = await getAuthUser()
+  if (!user) return { linked: false, telegramId: null, displayName: null }
+
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from("tenant_members")
+    .select("telegram_id, display_name")
+    .eq("user_id", user.id)
+    .not("telegram_id", "is", null)
+    .limit(1)
+    .maybeSingle()
+
+  if (!data?.telegram_id) return { linked: false, telegramId: null, displayName: null }
+  return {
+    linked: true,
+    telegramId: String(data.telegram_id),
+    displayName: data.display_name ?? null,
+  }
+}
+
+// ─── Putus hubungan: lepas telegram_id dari baris member user ───────────────────
+// Tetap anggota tenant (data tak hilang), hanya identitas Telegram-nya dilepas
+// supaya user bisa menghubungkan ulang dari nol.
+
+export async function unlinkTelegram() {
+  const user = await getAuthUser()
+  if (!user) return { error: "Tidak terautentikasi" }
+
+  const admin = createAdminClient()
+  const { error } = await admin
+    .from("tenant_members")
+    .update({ telegram_id: null })
+    .eq("user_id", user.id)
+    .not("telegram_id", "is", null)
+
+  if (error) return { error: `Gagal memutuskan hubungan: ${error.message}` }
+
+  revalidatePath("/dashboard/link")
+  return { success: true }
+}
+
 // ─── Arah A1: WEB generate kode (web_to_bot) ────────────────────────────────────
 // User web bikin kode, lalu ketik kode itu di bot Telegram (/hubungkan <kode>).
 // Bot yang akan set tenant_members.user_id = user web ini.

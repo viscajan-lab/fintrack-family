@@ -1,11 +1,83 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Copy, Check, Smartphone, Globe, Loader2 } from "lucide-react"
-import { generateWebCode, claimBotCode } from "./actions"
+import { Copy, Check, Smartphone, Globe, Loader2, Link2, Link2Off } from "lucide-react"
+import { generateWebCode, claimBotCode, unlinkTelegram, type LinkStatus } from "./actions"
 
-export function LinkClient() {
+export function LinkClient({ status }: { status: LinkStatus }) {
+  // ─── Status terhubung: putus hubungan ─────────────────────────
+  const [unlinkPending, startUnlink] = useTransition()
+  const [unlinkErr, setUnlinkErr] = useState<string | null>(null)
+  const [confirmUnlink, setConfirmUnlink] = useState(false)
+
+  function handleUnlink() {
+    setUnlinkErr(null)
+    startUnlink(async () => {
+      const res = await unlinkTelegram()
+      if (res.error) {
+        setUnlinkErr(res.error)
+        setConfirmUnlink(false)
+      }
+      // sukses → revalidatePath("/dashboard/link") merefresh server → status.linked=false
+    })
+  }
+
+  // ─── Bila SUDAH terhubung: tampilkan status + tombol putuskan ──
+  if (status.linked) {
+    return (
+      <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Link2 size={18} className="text-green-500" />
+          <h2 className="font-semibold text-green-600 dark:text-green-400">Sudah terhubung</h2>
+        </div>
+        <p className="text-sm text-[var(--color-muted)]">
+          Akun web ini sudah tersambung ke bot Telegram FinTrack
+          {status.displayName ? <> sebagai <b className="text-[var(--color-fg)]">{status.displayName}</b></> : null}
+          {status.telegramId ? <> (ID Telegram <code className="px-1 rounded bg-[var(--color-border)]">{status.telegramId}</code>)</> : null}
+          . Transaksi dari bot dan web kini tersinkron.
+        </p>
+        <p className="text-xs text-[var(--color-muted)]">
+          Mau menghubungkan ke akun Telegram lain? Putuskan hubungan yang sekarang dulu, lalu hubungkan ulang.
+        </p>
+
+        {!confirmUnlink ? (
+          <button
+            onClick={() => setConfirmUnlink(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-red-500/40 text-red-500 text-sm font-medium hover:bg-red-500/10 transition-colors"
+          >
+            <Link2Off size={16} />
+            Putuskan Hubungan
+          </button>
+        ) : (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleUnlink}
+              disabled={unlinkPending}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-500 text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {unlinkPending ? <Loader2 size={16} className="animate-spin" /> : <Link2Off size={16} />}
+              Ya, putuskan
+            </button>
+            <button
+              onClick={() => setConfirmUnlink(false)}
+              disabled={unlinkPending}
+              className="px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm font-medium hover:bg-[var(--color-border)] transition-colors disabled:opacity-50"
+            >
+              Batal
+            </button>
+          </div>
+        )}
+
+        {unlinkErr && <p className="text-sm text-red-500">{unlinkErr}</p>}
+      </div>
+    )
+  }
+
   // ─── Arah A1: web generate kode ───────────────────────────────
+  return <LinkForms />
+}
+
+function LinkForms() {
   const [webCode, setWebCode] = useState<string | null>(null)
   const [webErr, setWebErr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)

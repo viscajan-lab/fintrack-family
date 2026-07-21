@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { getMyRole } from "@/lib/data/queries"
 import { LinkClient } from "./LinkClient"
+import { getLinkStatus } from "./actions"
 import { SubTabs } from "@/components/layout/SubTabs"
 import { pengaturanTabs } from "@/components/layout/tabs"
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic"
 export default async function LinkPage() {
   const role = await getMyRole()
   if (role === "member") redirect("/dashboard/settings")
+
+  const status = await getLinkStatus()
 
   return (
     <div className="p-6 space-y-5 max-w-2xl">
@@ -20,7 +23,7 @@ export default async function LinkPage() {
         </p>
       </div>
 
-      <LinkClient />
+      <LinkClient status={status} />
     </div>
   )
 }
