@@ -11,7 +11,7 @@ export interface TenantOption {
 }
 
 type Feedback =
-  | { kind: "success"; email: string; tenantName: string }
+  | { kind: "success"; email: string; tenantName: string | null }
   | { kind: "error"; message: string }
   | null
 
@@ -32,7 +32,7 @@ export function InviteAdminForm({ tenants }: { tenants: TenantOption[] }) {
         setFeedback({
           kind: "success",
           email: res.email as string,
-          tenantName: res.tenantName as string,
+          tenantName: (res.tenantName as string | null) ?? null,
         })
         setFormKey((k) => k + 1) // reset form
       }
@@ -46,16 +46,24 @@ export function InviteAdminForm({ tenants }: { tenants: TenantOption[] }) {
         <h2 className="font-semibold">Daftarkan Admin Baru</h2>
       </div>
       <p className="text-sm text-[var(--color-muted)] -mt-1">
-        Pilih keluarga, masukkan email calon admin. Undangan dikirim via email —
-        penerima menyetel password sendiri lalu otomatis jadi admin keluarga itu.
+        Masukkan email calon admin. Kosongkan pilihan keluarga bila ingin dia
+        <strong> membuat keluarganya sendiri</strong> saat onboarding. Undangan
+        dikirim via email — penerima menyetel password sendiri lalu jadi admin.
       </p>
 
       {feedback?.kind === "success" && (
         <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
           <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
           <span>
-            Undangan terkirim ke <strong>{feedback.email}</strong> untuk keluarga{" "}
-            <strong>{feedback.tenantName}</strong>. Minta mereka cek email (termasuk folder spam).
+            Undangan terkirim ke <strong>{feedback.email}</strong>
+            {feedback.tenantName ? (
+              <>
+                {" "}untuk keluarga <strong>{feedback.tenantName}</strong>.
+              </>
+            ) : (
+              <> — dia akan <strong>membuat keluarganya sendiri</strong> saat onboarding.</>
+            )}{" "}
+            Minta mereka cek email (termasuk folder spam).
           </span>
         </div>
       )}
@@ -66,49 +74,48 @@ export function InviteAdminForm({ tenants }: { tenants: TenantOption[] }) {
         </div>
       )}
 
-      {tenants.length === 0 ? (
-        <p className="text-sm text-[var(--color-muted)]">
-          Belum ada keluarga terdaftar. Buat keluarga dulu lewat onboarding.
-        </p>
-      ) : (
-        <form key={formKey} onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <label htmlFor="tenant_id" className="block text-sm font-medium">Keluarga</label>
-            <select
-              id="tenant_id"
-              name="tenant_id"
-              required
-              defaultValue=""
-              className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-            >
-              <option value="" disabled>Pilih keluarga…</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="block text-sm font-medium">Email calon admin</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              placeholder="admin@email.com"
-              className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent placeholder:text-[var(--color-muted)]"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+      <form key={formKey} onSubmit={onSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label htmlFor="tenant_id" className="block text-sm font-medium">
+            Keluarga <span className="text-[var(--color-muted)] font-normal">(opsional)</span>
+          </label>
+          <select
+            id="tenant_id"
+            name="tenant_id"
+            defaultValue=""
+            className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
           >
-            {pending ? "Mengirim undangan…" : "Kirim Undangan"}
-          </button>
-        </form>
-      )}
+            <option value="">— Biarkan dia buat keluarga sendiri —</option>
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-[var(--color-muted)]">
+            Pilih keluarga untuk menempelkan admin ke keluarga yang sudah ada,
+            atau biarkan kosong agar dia membuat keluarganya sendiri.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label htmlFor="email" className="block text-sm font-medium">Email calon admin</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            placeholder="admin@email.com"
+            className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent placeholder:text-[var(--color-muted)]"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={pending}
+          className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-white bg-brand-500 hover:bg-brand-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {pending ? "Mengirim undangan…" : "Kirim Undangan"}
+        </button>
+      </form>
     </div>
   )
 }

@@ -38,8 +38,14 @@ async function requireSuperAdmin(): Promise<
 }
 
 /**
- * super_admin mengundang admin baru ke tenant yang sudah ada.
- * FormData: email, tenant_id.
+ * super_admin mengundang admin baru via email.
+ * FormData: email, tenant_id (OPSIONAL).
+ *
+ * Dua mode:
+ *   A. tenant_id diisi → admin ditempel ke keluarga existing (perilaku lama).
+ *   B. tenant_id kosong → admin baru diundang TANPA keluarga. Setelah set
+ *      password ia diarahkan ke /onboarding/family untuk membuat keluarganya
+ *      sendiri (via RPC self_create_tenant). Ini alur "kepala keluarga baru".
  */
 export async function inviteAdmin(formData: FormData) {
   const gate = await requireSuperAdmin()
@@ -50,20 +56,28 @@ export async function inviteAdmin(formData: FormData) {
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return { error: "Email tidak valid" }
-  if (!tenantId) return { error: "Pilih keluarga (tenant) tujuan dulu" }
 
   const admin = createAdminClient()
 
-  // Pastikan tenant benar-benar ada (hindari titip role ke tenant hantu).
-  const { data: tenant } = await admin
-    .from("tenants")
-    .select("id, name")
-    .eq("id", tenantId)
-    .maybeSingle()
-  if (!tenant) return { error: "Keluarga (tenant) tidak ditemukan" }
+  // Mode A: kalau tenant_id diisi, pastikan tenant benar-benar ada.
+  let tenantName: string | null = null
+  if (tenantId) {
+    const { data: tenant } = await admin
+      .from("tenants")
+      .select("id, name")
+      .eq("id", tenantId)
+      .maybeSingle()
+    if (!tenant) return { error: "Keluarga (tenant) tidak ditemukan" }
+    tenantName = tenant.name
+  }
 
+  // Mode B (tenant kosong): titip role admin tanpa tenant. finalizeInvite akan
+  // melewati attach; setPassword mengarahkan ke /onboarding/family.
   const { data: invited, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { pending_tenant_id: tenantId, pending_role: "admin" },
+    data: {
+      pending_tenant_id: tenantId || null,
+      pending_role: "admin",
+    },
     redirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent("/auth/set-password")}`,
   })
 
@@ -81,7 +95,8 @@ export async function inviteAdmin(formData: FormData) {
   return {
     success: true,
     email,
-    tenantName: tenant.name,
+    // null → UI menampilkan "akan membuat keluarga sendiri"
+    tenantName,
     userId: invited?.user?.id ?? null,
   }
 }
