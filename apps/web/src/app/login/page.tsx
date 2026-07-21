@@ -1,4 +1,5 @@
 import { AuthCard, Field, SubmitButton } from "@/components/auth/AuthCard"
+import { InviteFragmentHandler } from "@/components/auth/InviteFragmentHandler"
 import { login } from "@/app/auth/actions"
 
 interface Props {
@@ -14,6 +15,7 @@ export default async function LoginPage({ searchParams }: Props) {
       subtitle="Pantau keuangan keluarga kamu"
       error={error ?? null}
     >
+      <InviteFragmentHandler />
       <form action={login} className="space-y-4">
         <Field label="Email" name="email" type="email" placeholder="kamu@email.com" required />
         <Field label="Password" name="password" type="password" placeholder="••••••••" required />
