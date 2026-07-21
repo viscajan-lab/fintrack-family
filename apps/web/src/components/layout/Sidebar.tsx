@@ -1,7 +1,7 @@
 "use client"
 
-import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { NavLink } from "./NavLink"
 import {
   LayoutDashboard,
   ArrowLeftRight,
@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   LogOut,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { logout } from "@/app/auth/actions"
 import type { UserRole } from "@/lib/data/queries"
 
@@ -116,19 +115,17 @@ export function Sidebar({ role }: { role: UserRole }) {
           const { href, label, icon: Icon } = item
           const active = isActive(item)
           return (
-            <Link
+            <NavLink
               key={href}
               href={href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active
-                  ? "bg-[var(--color-brand-500)] text-white"
-                  : "text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)]"
-              )}
+              active={active}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+              activeClassName="bg-[var(--color-brand-500)] text-white"
+              idleClassName="text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)]"
             >
               <Icon size={18} strokeWidth={1.8} />
               {label}
-            </Link>
+            </NavLink>
           )
         })}
       </nav>

@@ -1,8 +1,7 @@
 "use client"
 
-import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
+import { NavLink } from "./NavLink"
 
 export type SubTab = { href: string; label: string }
 
@@ -20,18 +19,16 @@ export function SubTabs({ tabs }: { tabs: SubTab[] }) {
         {tabs.map(({ href, label }) => {
           const active = path === href || path.startsWith(href + "/")
           return (
-            <Link
+            <NavLink
               key={href}
               href={href}
-              className={cn(
-                "px-3.5 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors",
-                active
-                  ? "border-[var(--color-brand-500)] text-[var(--color-foreground)]"
-                  : "border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
-              )}
+              active={active}
+              className="px-3.5 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors flex items-center gap-1.5"
+              activeClassName="border-[var(--color-brand-500)] text-[var(--color-foreground)]"
+              idleClassName="border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
             >
               {label}
-            </Link>
+            </NavLink>
           )
         })}
       </nav>
