@@ -25,12 +25,13 @@ async function requireSuperAdmin(): Promise<
   if (!user) return { ok: false, error: "Tidak terautentikasi" }
 
   const admin = createAdminClient()
+  // super_admin = peran GLOBAL platform → sumber kebenaran tabel super_admins,
+  // konsisten dgn getMyRole() (yg memunculkan menu /admin). JANGAN cek tenant_members:
+  // super_admin bisa tak punya baris tenant sama sekali → gate akan salah menolak.
   const { data } = await admin
-    .from("tenant_members")
-    .select("role")
+    .from("super_admins")
+    .select("user_id")
     .eq("user_id", user.id)
-    .eq("role", "super_admin")
-    .limit(1)
     .maybeSingle()
 
   if (!data) return { ok: false, error: "Hanya super admin yang boleh mendaftarkan admin" }
