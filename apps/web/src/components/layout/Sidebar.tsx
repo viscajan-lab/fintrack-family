@@ -13,6 +13,7 @@ import {
   HandCoins,
   Wallet,
   UserCog,
+  ShieldCheck,
   LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -27,23 +28,29 @@ type NavItem = {
   match?: string[]
   // Role minimum yang boleh melihat menu ini. Default: semua role.
   minRole?: UserRole
+  // Role yang menu ini disembunyikan darinya (mis. super_admin tak butuh menu operasional).
+  hideFor?: UserRole[]
   // Kalau true, hanya aktif saat path == href persis (tidak menangkap sub-path).
   exact?: boolean
 }
 
+// Menu operasional yang tak relevan bagi super_admin (dia hanya kelola sistem, bukan keuangan tenant).
+const OPS_ONLY: UserRole[] = ["super_admin"]
+
 const NAV: NavItem[] = [
   { href: "/dashboard",              label: "Beranda",    icon: LayoutDashboard },
-  { href: "/dashboard/transactions", label: "Transaksi",  icon: ArrowLeftRight },
-  { href: "/dashboard/budget",       label: "Budget",     icon: PieChart },
-  { href: "/dashboard/kantong",      label: "Kantong",    icon: Wallet },
-  { href: "/dashboard/savings",      label: "Tabungan",   icon: PiggyBank },
-  { href: "/dashboard/debts",        label: "Hutang/Piutang", icon: HandCoins },
-  { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat },
+  { href: "/dashboard/transactions", label: "Transaksi",  icon: ArrowLeftRight, hideFor: OPS_ONLY },
+  { href: "/dashboard/budget",       label: "Budget",     icon: PieChart,       hideFor: OPS_ONLY },
+  { href: "/dashboard/kantong",      label: "Kantong",    icon: Wallet,         hideFor: OPS_ONLY },
+  { href: "/dashboard/savings",      label: "Tabungan",   icon: PiggyBank,      hideFor: OPS_ONLY },
+  { href: "/dashboard/debts",        label: "Hutang/Piutang", icon: HandCoins,  hideFor: OPS_ONLY },
+  { href: "/dashboard/recurring",    label: "Berulang",   icon: Repeat,         hideFor: OPS_ONLY },
   {
     href: "/dashboard/reports",
     label: "Analisis",
     icon: BarChart3,
     match: ["/dashboard/reports", "/dashboard/trends", "/dashboard/insight", "/dashboard/riwayat"],
+    hideFor: OPS_ONLY,
   },
   {
     href: "/dashboard/settings",
@@ -58,6 +65,14 @@ const NAV: NavItem[] = [
     match: ["/admin/users"],
     minRole: "super_admin",
   },
+  {
+    href: "/admin",
+    label: "Admin",
+    icon: ShieldCheck,
+    match: ["/admin"],
+    exact: true,
+    minRole: "super_admin",
+  },
 ]
 
 // Peringkat role untuk perbandingan minRole (makin tinggi makin berkuasa).
@@ -70,9 +85,11 @@ const ROLE_RANK: Record<UserRole, number> = {
 export function Sidebar({ role }: { role: UserRole }) {
   const path = usePathname()
 
-  // Sembunyikan menu yang butuh role lebih tinggi dari role user.
+  // Sembunyikan menu yang butuh role lebih tinggi, atau yang di-hide untuk role ini.
   const visibleNav = NAV.filter(
-    (item) => !item.minRole || ROLE_RANK[role] >= ROLE_RANK[item.minRole],
+    (item) =>
+      (!item.minRole || ROLE_RANK[role] >= ROLE_RANK[item.minRole]) &&
+      !item.hideFor?.includes(role),
   )
 
   const isActive = (item: NavItem) => {
