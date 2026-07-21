@@ -155,6 +155,15 @@ export async function getMyRole(): Promise<UserRole> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return "member"
 
+  // super_admin adalah peran GLOBAL platform — sumber kebenaran tabel super_admins,
+  // lepas dari keanggotaan tenant (yang bisa dihapus). Cek ini dulu.
+  const { data: sa } = await supabase
+    .from("super_admins")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle()
+  if (sa) return "super_admin"
+
   const { data } = await supabase
     .from("tenant_members")
     .select("role")
