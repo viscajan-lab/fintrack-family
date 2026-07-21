@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   Check, Loader2, Copy, Smartphone, Users, Database, Sheet,
-  ArrowRight, ArrowLeft, PartyPopper, Tags, Wallet, Plus,
+  ArrowRight, ArrowLeft, PartyPopper, Tags, Wallet, Plus, ExternalLink,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { generateWebCode } from "@/app/dashboard/link/actions"
@@ -187,6 +187,18 @@ function TelegramStep({
           Buat kode di bawah, lalu kirim <code className="px-1 rounded bg-[var(--color-border)]">/hubungkan KODE</code> ke bot Telegram FinTrack.
         </p>
       </div>
+
+      {state.botUsername && (
+        <a
+          href={`https://t.me/${state.botUsername}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-[var(--color-border)] text-sm font-medium hover:bg-[var(--color-border)]"
+        >
+          <ExternalLink size={16} />
+          Buka bot di Telegram
+        </a>
+      )}
 
       {code ? (
         <div className="space-y-3">
