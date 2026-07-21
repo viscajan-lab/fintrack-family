@@ -84,13 +84,22 @@ const ROLE_RANK: Record<UserRole, number> = {
   super_admin: 2,
 }
 
-function Brand() {
+function Brand({ role }: { role?: UserRole }) {
   return (
     <div className="flex items-center gap-2">
       <div className="w-8 h-8 rounded-lg bg-[var(--color-brand-500)] flex items-center justify-center text-white font-bold text-sm">
         F
       </div>
       <span className="font-semibold text-base tracking-tight">FinTrack</span>
+      {role === "super_admin" && (
+        <span
+          title="Kamu login sebagai Super Admin platform"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset ring-amber-500/30"
+        >
+          <ShieldCheck size={11} strokeWidth={2.4} />
+          Super Admin
+        </span>
+      )}
     </div>
   )
 }
@@ -98,9 +107,6 @@ function Brand() {
 export function Sidebar({ role }: { role: UserRole }) {
   const path = usePathname()
   const [open, setOpen] = useState(false)
-
-  // Tutup overlay otomatis tiap kali route berubah (setelah user memilih menu).
-  useEffect(() => setOpen(false), [path])
 
   // Kunci scroll body saat menu full-screen mobile terbuka.
   useEffect(() => {
@@ -155,7 +161,7 @@ export function Sidebar({ role }: { role: UserRole }) {
       {/* ===== Sidebar desktop (md+) ===== */}
       <aside className="hidden md:flex flex-col w-60 shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] h-screen sticky top-0">
         <div className="flex items-center px-5 py-5 border-b border-[var(--color-border)]">
-          <Brand />
+          <Brand role={role} />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">{navLinks}</nav>
         <div className="px-3 pb-4">{logoutBtn}</div>
@@ -163,7 +169,7 @@ export function Sidebar({ role }: { role: UserRole }) {
 
       {/* ===== Topbar mobile (< md) ===== */}
       <header className="md:hidden fixed inset-x-0 top-0 z-40 flex items-center justify-between px-4 h-14 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
-        <Brand />
+        <Brand role={role} />
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -177,7 +183,7 @@ export function Sidebar({ role }: { role: UserRole }) {
 
       {/* ===== Overlay menu full-screen mobile ===== */}
       {open && (
-        <div className="md:hidden fixed inset-0 top-14 z-40 flex flex-col bg-[var(--color-background)]">
+        <div className="md:hidden fixed inset-0 top-14 z-40 flex flex-col bg-[var(--color-background)]" onClickCapture={() => setOpen(false)}>
           <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">{navLinks}</nav>
           <div className="px-4 pb-6 pt-2 border-t border-[var(--color-border)]">{logoutBtn}</div>
         </div>
