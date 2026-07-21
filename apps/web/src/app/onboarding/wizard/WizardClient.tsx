@@ -4,17 +4,24 @@ import { useState, useEffect, useTransition, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import {
   Check, Loader2, Copy, Smartphone, Users, Database, Sheet,
-  ArrowRight, ArrowLeft, PartyPopper,
+  ArrowRight, ArrowLeft, PartyPopper, Tags, Wallet, Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { generateWebCode } from "@/app/dashboard/link/actions"
 import { createInvite } from "@/app/dashboard/members/actions"
-import { getWizardState, type WizardState } from "./actions"
+import { addCategory, setMemberAllowance } from "@/app/dashboard/actions"
+import {
+  getWizardState,
+  type WizardState,
+  type WizardMember,
+} from "./actions"
 
 const STEPS = [
-  { key: "telegram", label: "Sambung Telegram", icon: Smartphone },
-  { key: "members",  label: "Tambah Anggota",   icon: Users },
-  { key: "storage",  label: "Pilih Storage",    icon: Database },
+  { key: "telegram",   label: "Sambung Telegram", icon: Smartphone },
+  { key: "members",    label: "Tambah Anggota",   icon: Users },
+  { key: "categories", label: "Kategori",         icon: Tags },
+  { key: "pockets",    label: "Kantong",          icon: Wallet },
+  { key: "storage",    label: "Pilih Storage",    icon: Database },
 ] as const
 
 type StepKey = (typeof STEPS)[number]["key"]
@@ -54,6 +61,12 @@ export function WizardClient({ initial }: { initial: WizardState }) {
           {step === "members" && (
             <MembersStep state={state} onNext={goNext} onBack={goBack} />
           )}
+          {step === "categories" && (
+            <CategoriesStep state={state} refresh={refresh} onNext={goNext} onBack={goBack} />
+          )}
+          {step === "pockets" && (
+            <PocketsStep state={state} refresh={refresh} onNext={goNext} onBack={goBack} />
+          )}
           {step === "storage" && (
             <StorageStep onBack={goBack} onFinish={() => router.push("/dashboard")} />
           )}
@@ -69,6 +82,8 @@ function ProgressBar({ stepIdx, state }: { stepIdx: number; state: WizardState }
   const done: Record<StepKey, boolean> = {
     telegram: state.telegramLinked,
     members: state.memberCount > 1,
+    categories: state.categories.some((c) => !c.isDefault),
+    pockets: state.members.some((m) => m.allowance > 0),
     storage: state.storageType != null,
   }
   return (
@@ -280,7 +295,261 @@ function MembersStep({
   )
 }
 
-// ─── Step 3: Storage + finish (A4) ────────────────────────────────────────────
+// ─── Step 3: Kategori (opsional, pre-filled default) ──────────────────────────
+
+function CategoriesStep({
+  state, refresh, onNext, onBack,
+}: {
+  state: WizardState
+  refresh: () => Promise<WizardState>
+  onNext: () => void
+  onBack: () => void
+}) {
+  const defaults = state.categories.filter((c) => c.isDefault)
+  const customs = state.categories.filter((c) => !c.isDefault)
+
+  const [name, setName] = useState("")
+  const [emoji, setEmoji] = useState("")
+  const [type, setType] = useState<"expense" | "income" | "both">("expense")
+  const [err, setErr] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+
+  function add() {
+    setErr(null)
+    if (!name.trim()) { setErr("Nama kategori wajib diisi"); return }
+    const fd = new FormData()
+    fd.set("name", name.trim())
+    fd.set("emoji", emoji.trim())
+    fd.set("type", type)
+    start(async () => {
+      const res = await addCategory(fd)
+      if (res?.error) { setErr(res.error); return }
+      setName(""); setEmoji("")
+      await refresh()
+    })
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold">Kategori keluarga</h2>
+        <p className="text-sm text-[var(--color-muted)] mt-1">
+          Keluargamu sudah punya {defaults.length} kategori bawaan — langsung bisa dipakai mencatat.
+          Mau tambah kategori sendiri? Silakan (opsional).
+        </p>
+      </div>
+
+      {/* Kategori bawaan (read-only chips) */}
+      {defaults.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-[var(--color-muted)] mb-2">Kategori bawaan</p>
+          <div className="flex flex-wrap gap-2">
+            {defaults.map((c) => (
+              <span key={c.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--color-border)]">
+                <span>{c.emoji || "🏷️"}</span>{c.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Kategori custom yang sudah ditambahkan */}
+      {customs.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-[var(--color-muted)] mb-2">Kategori kamu</p>
+          <div className="flex flex-wrap gap-2">
+            {customs.map((c) => (
+              <span key={c.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--color-brand-500)]/10 text-[var(--color-brand-500)] border border-[var(--color-brand-500)]/30">
+                <span>{c.emoji || "🏷️"}</span>{c.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Form tambah kategori custom */}
+      <div className="rounded-xl border border-[var(--color-border)] p-4 space-y-3">
+        <p className="text-sm font-medium">Tambah kategori baru</p>
+        <div className="flex gap-2">
+          <input
+            value={emoji}
+            onChange={(e) => setEmoji(e.target.value)}
+            placeholder="🍔"
+            maxLength={2}
+            className="w-14 text-center px-2 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] text-sm"
+          />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Nama kategori (mis. Jajan)"
+            className="flex-1 px-3 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] text-sm"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {(["expense", "income", "both"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setType(t)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                type === t
+                  ? "border-[var(--color-brand-500)] bg-[var(--color-brand-500)]/10 text-[var(--color-brand-500)]"
+                  : "border-[var(--color-border)] text-[var(--color-muted)]"
+              )}
+            >
+              {t === "expense" ? "Pengeluaran" : t === "income" ? "Pemasukan" : "Keduanya"}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={add}
+            disabled={pending}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--color-brand-500)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            {pending ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
+            Tambah
+          </button>
+        </div>
+        {err && <p className="text-sm text-red-500">{err}</p>}
+      </div>
+
+      <div className="flex items-center justify-between pt-2">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
+          <ArrowLeft size={16} /> Kembali
+        </button>
+        <button onClick={onNext} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--color-brand-500)] text-white text-sm font-semibold hover:opacity-90">
+          Lanjut <ArrowRight size={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 4: Kantong (jatah bulanan per anggota) ──────────────────────────────
+
+function formatRupiah(n: number): string {
+  return n > 0 ? n.toLocaleString("id-ID") : ""
+}
+
+function PocketsStep({
+  state, refresh, onNext, onBack,
+}: {
+  state: WizardState
+  refresh: () => Promise<WizardState>
+  onNext: () => void
+  onBack: () => void
+}) {
+  // Nilai input per member (string, hanya digit). Seed dari allowance existing.
+  const [amounts, setAmounts] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {}
+    for (const m of state.members) init[m.id] = m.allowance > 0 ? String(m.allowance) : ""
+    return init
+  })
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [err, setErr] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+
+  function setAmount(id: string, raw: string) {
+    const digits = raw.replace(/\D/g, "")
+    setAmounts((a) => ({ ...a, [id]: digits }))
+    setSavedIds((s) => { const n = new Set(s); n.delete(id); return n })
+  }
+
+  function save(member: WizardMember) {
+    setErr(null)
+    const val = amounts[member.id] ?? ""
+    if (!val) { setErr("Isi jumlah jatah dulu untuk " + member.displayName); return }
+    setSavingId(member.id)
+    const fd = new FormData()
+    fd.set("member_id", member.id)
+    fd.set("amount", val)
+    fd.set("month", state.currentMonth)
+    start(async () => {
+      const res = await setMemberAllowance(fd)
+      setSavingId(null)
+      if (res?.error) { setErr(res.error); return }
+      setSavedIds((s) => new Set(s).add(member.id))
+      await refresh()
+    })
+  }
+
+  const monthLabel = new Date(state.currentMonth + "-01").toLocaleDateString("id-ID", {
+    month: "long", year: "numeric",
+  })
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold">Kantong bulanan</h2>
+        <p className="text-sm text-[var(--color-muted)] mt-1">
+          Atur jatah pengeluaran tiap anggota untuk <b>{monthLabel}</b>. Kosongkan kalau belum mau
+          diatur — bisa kapan saja lewat menu Kantong. (Opsional.)
+        </p>
+      </div>
+
+      {!state.isAdmin && (
+        <p className="text-sm text-amber-600">Hanya admin yang bisa mengatur jatah. Kamu bisa lewati langkah ini.</p>
+      )}
+
+      <div className="space-y-2.5">
+        {state.members.map((m) => {
+          const saved = savedIds.has(m.id)
+          const busy = savingId === m.id
+          return (
+            <div key={m.id} className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] p-3">
+              <div className="w-9 h-9 rounded-full bg-[var(--color-border)] flex items-center justify-center text-sm font-semibold shrink-0">
+                {m.displayName.charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate">{m.displayName}</p>
+                <p className="text-[11px] text-[var(--color-muted)]">{m.role === "admin" ? "Admin" : "Anggota"}</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm text-[var(--color-muted)]">Rp</span>
+                <input
+                  inputMode="numeric"
+                  value={formatRupiah(parseInt(amounts[m.id] || "0", 10))}
+                  onChange={(e) => setAmount(m.id, e.target.value)}
+                  placeholder="0"
+                  disabled={!state.isAdmin}
+                  className="w-32 px-2.5 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] text-sm text-right disabled:opacity-50"
+                />
+              </div>
+              <button
+                onClick={() => save(m)}
+                disabled={!state.isAdmin || busy || pending}
+                className={cn(
+                  "shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50",
+                  saved
+                    ? "bg-emerald-500 text-white"
+                    : "border border-[var(--color-border)] hover:bg-[var(--color-border)]"
+                )}
+              >
+                {busy ? <Loader2 size={15} className="animate-spin" /> : saved ? <Check size={15} /> : null}
+                {saved ? "Tersimpan" : "Simpan"}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      {err && <p className="text-sm text-red-500">{err}</p>}
+
+      <div className="flex items-center justify-between pt-2">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
+          <ArrowLeft size={16} /> Kembali
+        </button>
+        <button onClick={onNext} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[var(--color-brand-500)] text-white text-sm font-semibold hover:opacity-90">
+          Lanjut <ArrowRight size={16} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Step 5: Storage + finish (A4) ────────────────────────────────────────────
 
 function StorageStep({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
   const [selected, setSelected] = useState<"supabase" | "sheets">("supabase")
