@@ -4,7 +4,8 @@ import { SpendingChart } from "@/components/charts/SpendingChart"
 import { CategoryBreakdown } from "@/components/charts/CategoryBreakdown"
 import { formatIDR }     from "@/lib/utils"
 import { getDashboardStats, getChartData, getExpenseByCategory } from "@/lib/data/queries"
-import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { ANALISIS_TABS } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 

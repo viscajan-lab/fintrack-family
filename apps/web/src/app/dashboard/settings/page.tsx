@@ -4,7 +4,8 @@ import { getLinkStatus, getReminderStatus, getGroupStatus } from "./actions"
 import { getMyRole } from "@/lib/data/queries"
 import { ReminderCard } from "@/components/settings/ReminderCard"
 import { GroupCard } from "@/components/settings/GroupCard"
-import { SubTabs, pengaturanTabs } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { pengaturanTabs } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 

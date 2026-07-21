@@ -4,7 +4,8 @@ import { CashflowCalendar }  from "@/components/charts/CashflowCalendar"
 import { MonthSelector }     from "@/components/charts/MonthSelector"
 import { formatIDR }         from "@/lib/utils"
 import { getCashflowCalendar } from "@/lib/data/queries"
-import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { ANALISIS_TABS } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 

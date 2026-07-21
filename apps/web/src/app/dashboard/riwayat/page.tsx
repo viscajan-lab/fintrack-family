@@ -1,7 +1,8 @@
 import { History, Plus, Pencil, Trash2 } from "lucide-react"
 import { getAuditLogs, type AuditLog } from "@/lib/data/queries"
 import { formatIDR } from "@/lib/utils"
-import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { ANALISIS_TABS } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 

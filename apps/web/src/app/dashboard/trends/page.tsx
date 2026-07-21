@@ -4,7 +4,8 @@ import { YearlyTrendChart } from "@/components/charts/YearlyTrendChart"
 import { YearSelector }     from "@/components/charts/YearSelector"
 import { formatIDR }        from "@/lib/utils"
 import { getYearlyTrend, getAvailableYears } from "@/lib/data/queries"
-import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { ANALISIS_TABS } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 

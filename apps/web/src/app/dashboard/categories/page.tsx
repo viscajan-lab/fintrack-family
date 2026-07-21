@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation"
 import { getCategories, getMyRole } from "@/lib/data/queries"
 import { CategoryManager }   from "@/components/categories/CategoryManager"
-import { SubTabs, pengaturanTabs } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { pengaturanTabs } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 

@@ -1,6 +1,7 @@
 import { getInsight } from "@/lib/data/queries"
 import { InsightView } from "@/components/insight/InsightView"
-import { SubTabs, ANALISIS_TABS } from "@/components/layout/SubTabs"
+import { SubTabs } from "@/components/layout/SubTabs"
+import { ANALISIS_TABS } from "@/components/layout/tabs"
 
 export const dynamic = "force-dynamic"
 
