@@ -12,12 +12,14 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  // Get tenant_id for this user
+  // Get tenant_id for this user (toleran multi-tenant: ambil yang terbaru)
   const { data: member, error: memberErr } = await supabase
     .from("tenant_members")
     .select("tenant_id")
     .eq("user_id", user.id)
-    .single()
+    .order("joined_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   if (memberErr || !member) {
     return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
