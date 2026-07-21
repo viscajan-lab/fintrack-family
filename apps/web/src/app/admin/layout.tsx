@@ -13,7 +13,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <StorageContextProvider>
       <div className="flex min-h-screen">
         <Sidebar role={role} />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto pt-14 md:pt-0">{children}</main>
       </div>
     </StorageContextProvider>
   )
