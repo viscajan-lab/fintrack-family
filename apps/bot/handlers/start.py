@@ -173,9 +173,31 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 
 @router.message(SetupStates.waiting_family_name)
 async def handle_family_name(message: Message, state: FSMContext) -> None:
-    family_name = message.text.strip()
+    family_name = (message.text or "").strip()
     tg_id = message.from_user.id
     name  = message.from_user.first_name
+
+    # State-handler menangkap SEMUA teks lebih dulu — termasuk yang diawali '/'.
+    # Kalau user malah ngetik command di sini (mis. /hubungkan <kode> saat mengira
+    # ini step sambung), JANGAN jadikan nama workspace. Arahkan balik, biar tak
+    # lahir tenant sampah bernama "/hubungkan 194623".
+    if family_name.startswith("/"):
+        cmd = family_name.split()[0]
+        if cmd in ("/hubungkan", "/link"):
+            await message.answer(
+                "ℹ️ Kamu belum punya workspace, jadi belum bisa menyambung kode.\n\n"
+                "Ketik dulu *nama keluargamu* untuk buat workspace "
+                "(contoh: `Keluarga Budi`), lalu sambungkan akun web dari menu "
+                "*Hubungkan* setelahnya.",
+                parse_mode="Markdown",
+            )
+        else:
+            await message.answer(
+                "❌ Itu sepertinya perintah, bukan nama keluarga.\n"
+                "*Ketik nama keluargamu* untuk buat workspace (contoh: `Keluarga Budi`):",
+                parse_mode="Markdown",
+            )
+        return
 
     if len(family_name) < 3:
         await message.answer("❌ Nama keluarga minimal 3 karakter ya, coba lagi:")
