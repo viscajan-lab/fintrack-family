@@ -1,6 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
 import { userHasTenant } from "@/app/onboarding/family/actions"
 
@@ -38,7 +39,18 @@ export async function register(_formData: FormData) {
 
 export async function logout() {
   const supabase = await createClient()
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: "local" })
+
+  // signOut() menandai cookie kedaluwarsa, tapi di App Router penulisan cookie
+  // dari Server Action kadang tak ter-propagasi sempurna sehingga proxy masih
+  // melihat sesi & menendang balik ke /dashboard (user "tak pernah sampai" ke
+  // /login). Hapus eksplisit semua cookie auth Supabase (sb-*) agar getUser()
+  // di proxy pasti nihil → redirect ke /login bekerja andal.
+  const store = await cookies()
+  for (const c of store.getAll()) {
+    if (c.name.startsWith("sb-")) store.delete(c.name)
+  }
+
   redirect("/login")
 }
 
