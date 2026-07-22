@@ -173,7 +173,7 @@ export function Sidebar({ role }: { role: UserRole }) {
 
       {/* ===== Overlay menu full-screen mobile ===== */}
       {open && (
-        <div className="md:hidden fixed inset-0 top-14 z-40 flex flex-col bg-[var(--color-background)]" onClickCapture={() => setOpen(false)}>
+        <div className="md:hidden fixed inset-0 top-14 z-40 flex flex-col bg-[var(--color-background)]" onClick={() => setOpen(false)}>
           <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">{navLinks}</nav>
           <div className="px-4 pb-6 pt-2 border-t border-[var(--color-border)]"><LogoutButton /></div>
         </div>
