@@ -21,7 +21,7 @@ export default async function LoginPage({ searchParams }: Props) {
         <Field label="Password" name="password" type="password" placeholder="••••••••" required />
 
         <div className="pt-1">
-          <SubmitButton label="Masuk" />
+          <SubmitButton label="Masuk" pendingLabel="Masuk…" />
         </div>
       </form>
     </AuthCard>

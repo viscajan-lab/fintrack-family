@@ -65,19 +65,6 @@ export function Field({ label, name, type = "text", placeholder, required }: Fie
   )
 }
 
-interface SubmitButtonProps { label: string }
-
-export function SubmitButton({ label }: SubmitButtonProps) {
-  return (
-    <button
-      type="submit"
-      className={cn(
-        "w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-white",
-        "bg-[var(--color-brand-500)] hover:bg-[var(--color-brand-600)]",
-        "transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--color-brand-500)] focus:ring-offset-2"
-      )}
-    >
-      {label}
-    </button>
-  )
-}
+// SubmitButton dipindah ke file "use client" sendiri agar bisa memakai
+// useFormStatus(). Di-re-export di sini supaya import lama tetap valid.
+export { SubmitButton } from "./SubmitButton"

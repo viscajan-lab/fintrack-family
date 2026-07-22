@@ -41,7 +41,7 @@ export default async function CreateFamilyPage({ searchParams }: Props) {
         />
 
         <div className="pt-1">
-          <SubmitButton label="Buat & Lanjut" />
+          <SubmitButton label="Buat & Lanjut" pendingLabel="Membuat…" />
         </div>
       </form>
     </AuthCard>
