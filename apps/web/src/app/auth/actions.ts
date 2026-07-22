@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { userHasTenant } from "@/app/onboarding/family/actions"
 
 export async function login(formData: FormData) {
   const email    = formData.get("email")    as string
@@ -14,6 +15,13 @@ export async function login(formData: FormData) {
     console.error("[login] error:", error.message)
     redirect(`/login?error=${encodeURIComponent(error.message)}`)
   }
+
+  // User yang belum menyelesaikan onboarding (belum punya tenant — mis. diundang
+  // sbg admin tanpa keluarga, atau set password tapi tak lanjut buat keluarga)
+  // dilempar ke /onboarding/family, bukan mendarat di /dashboard kosong. Konsisten
+  // dgn alur set-password. userHasTenant() aman dipanggil di sini (server action).
+  if (!(await userHasTenant())) redirect("/onboarding/family")
+
   redirect("/dashboard")
 }
 
