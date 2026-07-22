@@ -33,3 +33,33 @@ export async function logout() {
   await supabase.auth.signOut()
   redirect("/login")
 }
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://fintrack-family.vercel.app"
+
+// Lupa/atur password (self-service). Dipakai dua kasus:
+//   1. User yang link undangannya kadaluarsa & belum pernah set password.
+//   2. User lama yang lupa password.
+// Supabase mengirim email recovery. Link recovery → /auth/callback (type=recovery)
+// atau fragment #type=recovery (ditangani InviteFragmentHandler) → keduanya
+// mengarahkan ke /auth/set-password untuk membuat password baru.
+//
+// CATATAN privasi: selalu balikkan sukses walau email tak terdaftar, supaya
+// tidak membocorkan email mana yang punya akun (account enumeration).
+export async function resetPassword(formData: FormData) {
+  const email = ((formData.get("email") as string) || "").trim().toLowerCase()
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    redirect(`/forgot-password?error=${encodeURIComponent("Email tidak valid")}`)
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent("/auth/set-password")}`,
+  })
+
+  // Jangan bocorkan error selain kegagalan tak terduga. Rate-limit dsb tetap
+  // ditampilkan generik.
+  if (error) console.error("[resetPassword] error:", error.message)
+
+  redirect("/forgot-password?sent=1")
+}

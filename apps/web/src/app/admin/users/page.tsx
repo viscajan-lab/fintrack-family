@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { UserCog } from "lucide-react"
 import { getMyRole, getAdminOverview } from "@/lib/data/queries"
 import { InviteAdminForm, type TenantOption } from "@/components/admin/InviteAdminForm"
+import { ResendInviteForm } from "@/components/admin/ResendInviteForm"
 
 export const dynamic = "force-dynamic"
 
@@ -30,6 +31,8 @@ export default async function AdminUsersPage() {
       </div>
 
       <InviteAdminForm tenants={options} />
+
+      <ResendInviteForm />
 
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
         <div className="px-5 py-4 border-b border-[var(--color-border)]">
