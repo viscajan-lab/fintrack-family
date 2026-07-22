@@ -15,11 +15,10 @@ import {
   Wallet,
   UserCog,
   ShieldCheck,
-  LogOut,
   Menu,
   X,
 } from "lucide-react"
-import { logout } from "@/app/auth/actions"
+import LogoutButton from "@/components/layout/LogoutButton"
 import type { UserRole } from "@/lib/data/queries"
 
 type NavItem = {
@@ -147,15 +146,6 @@ export function Sidebar({ role }: { role: UserRole }) {
     )
   })
 
-  const logoutBtn = (
-    <form action={logout}>
-      <button type="submit" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)] transition-colors">
-        <LogOut size={18} strokeWidth={1.8} />
-        Keluar
-      </button>
-    </form>
-  )
-
   return (
     <>
       {/* ===== Sidebar desktop (md+) ===== */}
@@ -164,7 +154,7 @@ export function Sidebar({ role }: { role: UserRole }) {
           <Brand role={role} />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">{navLinks}</nav>
-        <div className="px-3 pb-4">{logoutBtn}</div>
+        <div className="px-3 pb-4"><LogoutButton /></div>
       </aside>
 
       {/* ===== Topbar mobile (< md) ===== */}
@@ -185,7 +175,7 @@ export function Sidebar({ role }: { role: UserRole }) {
       {open && (
         <div className="md:hidden fixed inset-0 top-14 z-40 flex flex-col bg-[var(--color-background)]" onClickCapture={() => setOpen(false)}>
           <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">{navLinks}</nav>
-          <div className="px-4 pb-6 pt-2 border-t border-[var(--color-border)]">{logoutBtn}</div>
+          <div className="px-4 pb-6 pt-2 border-t border-[var(--color-border)]"><LogoutButton /></div>
         </div>
       )}
     </>
