@@ -19,7 +19,8 @@ import {
   X,
 } from "lucide-react"
 import LogoutButton from "@/components/layout/LogoutButton"
-import type { UserRole } from "@/lib/data/queries"
+import { NotificationBell } from "@/components/layout/NotificationBell"
+import type { UserRole, AppNotification } from "@/lib/data/queries"
 
 type NavItem = {
   href: string
@@ -103,7 +104,7 @@ function Brand({ role }: { role?: UserRole }) {
   )
 }
 
-export function Sidebar({ role }: { role: UserRole }) {
+export function Sidebar({ role, notifications = [] }: { role: UserRole; notifications?: AppNotification[] }) {
   const path = usePathname()
   const [open, setOpen] = useState(false)
 
@@ -150,8 +151,9 @@ export function Sidebar({ role }: { role: UserRole }) {
     <>
       {/* ===== Sidebar desktop (md+) ===== */}
       <aside className="hidden md:flex flex-col w-60 shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] h-screen sticky top-0">
-        <div className="flex items-center px-5 py-5 border-b border-[var(--color-border)]">
+        <div className="flex items-center justify-between gap-2 px-5 py-5 border-b border-[var(--color-border)]">
           <Brand role={role} />
+          <NotificationBell items={notifications} />
         </div>
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">{navLinks}</nav>
         <div className="px-3 pb-4"><LogoutButton /></div>
@@ -160,15 +162,18 @@ export function Sidebar({ role }: { role: UserRole }) {
       {/* ===== Topbar mobile (< md) ===== */}
       <header className="md:hidden fixed inset-x-0 top-0 z-40 flex items-center justify-between px-4 h-14 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
         <Brand role={role} />
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Tutup menu" : "Buka menu"}
-          aria-expanded={open}
-          className="p-2 -mr-2 rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)] transition-colors"
-        >
-          {open ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <div className="flex items-center gap-1 -mr-2">
+          <NotificationBell items={notifications} />
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-label={open ? "Tutup menu" : "Buka menu"}
+            aria-expanded={open}
+            className="p-2 rounded-lg text-[var(--color-muted)] hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)] transition-colors"
+          >
+            {open ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
       </header>
 
       {/* ===== Overlay menu full-screen mobile ===== */}

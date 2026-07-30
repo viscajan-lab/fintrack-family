@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { formatIDR } from "@/lib/utils"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1432,3 +1433,140 @@ export async function getDebts(): Promise<DebtsData> {
   return { debts, summary }
 }
 
+// ─── Notification Center ─────────────────────────────────────────────────────
+
+export type NotifSeverity = "danger" | "warning" | "info" | "success"
+
+export interface AppNotification {
+  id: string
+  severity: NotifSeverity
+  title: string
+  detail: string
+  href: string
+}
+
+const SEVERITY_RANK: Record<NotifSeverity, number> = {
+  danger: 0,
+  warning: 1,
+  info: 2,
+  success: 3,
+}
+
+/**
+ * Agregasi semua sinyal keuangan yang butuh perhatian jadi satu daftar.
+ * Derived real-time dari data yang sudah ada (tanpa tabel baru):
+ *  - Hutang/piutang lewat atau mendekati jatuh tempo
+ *  - Budget kategori mendekati / melewati limit
+ *  - Target tabungan tercapai atau deadline sudah dekat
+ *  - Tagihan berulang yang jatuh tempo hari ini / beberapa hari lagi
+ * Diurutkan dari yang paling mendesak.
+ */
+export async function getNotifications(): Promise<AppNotification[]> {
+  const [debtsData, budgetAlerts, goals, rules] = await Promise.all([
+    getDebts(),
+    getBudgetAlerts(),
+    getSavingsGoals(),
+    getRecurringRules(),
+  ])
+
+  const out: AppNotification[] = []
+
+  // ── Hutang / piutang ───────────────────────────────────────────────────────
+  for (const d of debtsData.debts) {
+    if (d.settled || d.daysLeft === null) continue
+    const isPayable = d.direction === "payable"
+    const label = isPayable ? "Hutang" : "Piutang"
+
+    if (d.overdue) {
+      out.push({
+        id: `debt-${d.id}`,
+        severity: "danger",
+        title: `${label} lewat jatuh tempo`,
+        detail: `${d.person_name} · ${formatIDR(d.remaining)} · telat ${Math.abs(d.daysLeft)} hari`,
+        href: "/dashboard/debts",
+      })
+    } else if (d.daysLeft <= 3) {
+      out.push({
+        id: `debt-${d.id}`,
+        severity: "warning",
+        title: `${label} segera jatuh tempo`,
+        detail: `${d.person_name} · ${formatIDR(d.remaining)} · ${d.daysLeft === 0 ? "hari ini" : `${d.daysLeft} hari lagi`}`,
+        href: "/dashboard/debts",
+      })
+    }
+  }
+
+  // ── Budget ─────────────────────────────────────────────────────────────────
+  for (const b of budgetAlerts) {
+    const severity: NotifSeverity =
+      b.level === "over" ? "danger" : b.level === "danger" ? "warning" : "info"
+    out.push({
+      id: `budget-${b.category_name}`,
+      severity,
+      title:
+        b.level === "over"
+          ? `Budget ${b.category_name} jebol`
+          : `Budget ${b.category_name} ${b.pct}% terpakai`,
+      detail: `${formatIDR(b.spent)} dari ${formatIDR(b.amount)}`,
+      href: "/dashboard/budget",
+    })
+  }
+
+  // ── Target tabungan ────────────────────────────────────────────────────────
+  for (const g of goals) {
+    if (g.achieved) {
+      out.push({
+        id: `goal-${g.id}`,
+        severity: "success",
+        title: `Target "${g.name}" tercapai`,
+        detail: `${formatIDR(g.saved_amount)} dari ${formatIDR(g.target_amount)}`,
+        href: "/dashboard/savings",
+      })
+      continue
+    }
+    if (g.daysLeft !== null && g.daysLeft <= 7) {
+      out.push({
+        id: `goal-${g.id}`,
+        severity: g.daysLeft < 0 ? "danger" : "warning",
+        title:
+          g.daysLeft < 0
+            ? `Target "${g.name}" lewat deadline`
+            : `Deadline "${g.name}" sudah dekat`,
+        detail: `kurang ${formatIDR(g.remaining)} · ${
+          g.daysLeft < 0
+            ? `telat ${Math.abs(g.daysLeft)} hari`
+            : g.daysLeft === 0
+              ? "hari ini"
+              : `${g.daysLeft} hari lagi`
+        }`,
+        href: "/dashboard/savings",
+      })
+    }
+  }
+
+  // ── Tagihan berulang ───────────────────────────────────────────────────────
+  const today = new Date()
+  const todayDate = today.getDate()
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+
+  for (const r of rules) {
+    if (!r.active) continue
+    // Aturan tanggal 29-31 diperlakukan jatuh di hari terakhir bulan pendek.
+    const dueDay = Math.min(r.day_of_month, daysInMonth)
+    const daysUntil = dueDay - todayDate
+    if (daysUntil < 0 || daysUntil > 3) continue
+
+    out.push({
+      id: `recurring-${r.id}`,
+      severity: daysUntil === 0 ? "warning" : "info",
+      title:
+        daysUntil === 0
+          ? `${r.description} jatuh tempo hari ini`
+          : `${r.description} ${daysUntil} hari lagi`,
+      detail: `${formatIDR(r.amount)} · ${r.category_name} · ${r.mode === "auto" ? "otomatis dicatat" : "perlu dicatat manual"}`,
+      href: "/dashboard/recurring",
+    })
+  }
+
+  return out.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity])
+}
