@@ -1,7 +1,9 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
+import { userHasTenant } from "@/app/onboarding/family/actions"
 
 export async function login(formData: FormData) {
   const email    = formData.get("email")    as string
@@ -14,6 +16,13 @@ export async function login(formData: FormData) {
     console.error("[login] error:", error.message)
     redirect(`/login?error=${encodeURIComponent(error.message)}`)
   }
+
+  // User yang belum menyelesaikan onboarding (belum punya tenant — mis. diundang
+  // sbg admin tanpa keluarga, atau set password tapi tak lanjut buat keluarga)
+  // dilempar ke /onboarding/family, bukan mendarat di /dashboard kosong. Konsisten
+  // dgn alur set-password. userHasTenant() aman dipanggil di sini (server action).
+  if (!(await userHasTenant())) redirect("/onboarding/family")
+
   redirect("/dashboard")
 }
 
@@ -30,6 +39,47 @@ export async function register(_formData: FormData) {
 
 export async function logout() {
   const supabase = await createClient()
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: "local" })
+
+  // signOut() menandai cookie kedaluwarsa, tapi di App Router penulisan cookie
+  // dari Server Action kadang tak ter-propagasi sempurna sehingga proxy masih
+  // melihat sesi & menendang balik ke /dashboard (user "tak pernah sampai" ke
+  // /login). Hapus eksplisit semua cookie auth Supabase (sb-*) agar getUser()
+  // di proxy pasti nihil → redirect ke /login bekerja andal.
+  const store = await cookies()
+  for (const c of store.getAll()) {
+    if (c.name.startsWith("sb-")) store.delete(c.name)
+  }
+
   redirect("/login")
+}
+
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://fintrack-family.vercel.app"
+
+// Lupa/atur password (self-service). Dipakai dua kasus:
+//   1. User yang link undangannya kadaluarsa & belum pernah set password.
+//   2. User lama yang lupa password.
+// Supabase mengirim email recovery. Link recovery → /auth/callback (type=recovery)
+// atau fragment #type=recovery (ditangani InviteFragmentHandler) → keduanya
+// mengarahkan ke /auth/set-password untuk membuat password baru.
+//
+// CATATAN privasi: selalu balikkan sukses walau email tak terdaftar, supaya
+// tidak membocorkan email mana yang punya akun (account enumeration).
+export async function resetPassword(formData: FormData) {
+  const email = ((formData.get("email") as string) || "").trim().toLowerCase()
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    redirect(`/forgot-password?error=${encodeURIComponent("Email tidak valid")}`)
+
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent("/auth/set-password")}`,
+  })
+
+  // Jangan bocorkan error selain kegagalan tak terduga. Rate-limit dsb tetap
+  // ditampilkan generik.
+  if (error) console.error("[resetPassword] error:", error.message)
+
+  redirect("/forgot-password?sent=1")
 }

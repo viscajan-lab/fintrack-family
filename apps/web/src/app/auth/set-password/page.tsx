@@ -32,7 +32,7 @@ export default async function SetPasswordPage({ searchParams }: Props) {
         <Field label="Konfirmasi password" name="confirm" type="password" placeholder="Ulangi password" required />
 
         <div className="pt-1">
-          <SubmitButton label="Simpan & Masuk" />
+          <SubmitButton label="Simpan & Masuk" pendingLabel="Menyimpan…" />
         </div>
       </form>
     </AuthCard>

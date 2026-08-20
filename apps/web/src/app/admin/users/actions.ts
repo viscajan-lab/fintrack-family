@@ -155,3 +155,50 @@ export async function finalizeInvite() {
   revalidatePath("/dashboard")
   return { success: true }
 }
+
+/**
+ * super_admin mengirim ULANG akses ke email yang sudah terlanjur diundang tapi
+ * link-nya kadaluarsa / tak sempat diklik.
+ *
+ * Masalah yang diselesaikan: inviteUserByEmail() LANGSUNG membuat akun di
+ * auth.users (tanpa password). Kalau link invite kadaluarsa, undang ulang via
+ * inviteUserByEmail akan GAGAL "already been registered", padahal user belum
+ * bisa login (belum punya password). Deadlock.
+ *
+ * Solusi: pakai resetPasswordForEmail() yang MENGIRIM email recovery otomatis
+ * (berbeda dari admin.generateLink yang cuma mengembalikan link tanpa kirim
+ * email). User membuat password baru di /auth/set-password (InviteFragmentHandler
+ * & callback sudah menangani type=recovery). Metadata pending_tenant_id tetap
+ * utuh, jadi finalizeInvite() tetap menempelkan user ke tenant seperti undangan
+ * awal.
+ *
+ * FormData: email.
+ */
+export async function resendInvite(formData: FormData) {
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return { error: gate.error }
+
+  const email = ((formData.get("email") as string) || "").trim().toLowerCase()
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return { error: "Email tidak valid" }
+
+  const admin = createAdminClient()
+
+  // Pastikan akun memang sudah ada (undangan sebelumnya sudah membuat baris di
+  // auth.users). Kalau belum, arahkan admin memakai form undangan biasa.
+  const { data: list, error: listErr } = await admin.auth.admin.listUsers()
+  if (listErr) return { error: listErr.message }
+  const existing = list.users.find((u) => u.email?.toLowerCase() === email)
+  if (!existing)
+    return { error: "Email ini belum pernah diundang. Pakai form undangan di atas." }
+
+  // resetPasswordForEmail MENGIRIM email recovery otomatis ke user.
+  const supabase = await createClient()
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${SITE_URL}/auth/callback?next=${encodeURIComponent("/auth/set-password")}`,
+  })
+
+  if (error) return { error: error.message }
+
+  return { success: true, email }
+}
